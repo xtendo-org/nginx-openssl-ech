@@ -46,6 +46,19 @@ class ParsedArgs:
     command: str
     run_id: int | None
     ref: str
+    tag: str | None
+    title: str | None
+    notes: str
+    draft: bool
+    prerelease: bool
+
+
+class RefResponse(TypedDict):
+    object: dict[str, str]
+
+
+class ReleaseResponse(TypedDict):
+    html_url: str
 
 
 def require_token() -> str:
@@ -157,6 +170,54 @@ def dispatch_run(session: requests.Session, run_id: int, ref: str) -> None:
     )
 
 
+def get_ref_sha(session: requests.Session, ref: str) -> str:
+    ref_name = ref
+    if ref_name.startswith("refs/heads/"):
+        ref_name = ref_name[len("refs/heads/") :]
+    url = f"{API_BASE}/repos/{OWNER}/{REPO}/git/ref/heads/{ref_name}"
+    resp = session.get(url)
+    resp.raise_for_status()
+    data = cast(RefResponse, resp.json())
+    sha = data.get("object", {}).get("sha")
+    if not sha:
+        raise SystemExit(f"Unable to resolve ref SHA for {ref}.")
+    return sha
+
+
+def create_tag_ref(session: requests.Session, tag: str, sha: str) -> None:
+    url = f"{API_BASE}/repos/{OWNER}/{REPO}/git/refs"
+    payload = {"ref": f"refs/tags/{tag}", "sha": sha}
+    resp = session.post(url, json=payload)
+    if resp.status_code == 422:
+        raise SystemExit(f"Tag already exists: {tag}")
+    resp.raise_for_status()
+    print(f"Created tag refs/tags/{tag} at {sha}.")
+
+
+def create_release(
+    session: requests.Session,
+    tag: str,
+    ref: str,
+    title: str | None,
+    notes: str,
+    draft: bool,
+    prerelease: bool,
+) -> None:
+    url = f"{API_BASE}/repos/{OWNER}/{REPO}/releases"
+    payload = {
+        "tag_name": tag,
+        "target_commitish": ref,
+        "name": title or tag,
+        "body": notes,
+        "draft": draft,
+        "prerelease": prerelease,
+    }
+    resp = session.post(url, json=payload)
+    resp.raise_for_status()
+    data = cast(ReleaseResponse, resp.json())
+    print(f"Created release: {data.get('html_url')}")
+
+
 def parse_args() -> ParsedArgs:
     parser = argparse.ArgumentParser(
         description=(
@@ -181,6 +242,29 @@ def parse_args() -> ParsedArgs:
         "--ref", default=DEFAULT_REF, help="Git ref to dispatch."
     )
 
+    release_parser = subparsers.add_parser(
+        "release",
+        help="Create a tag and release at a ref.",
+    )
+    _ = release_parser.add_argument("tag", help="Release tag name.")
+    _ = release_parser.add_argument(
+        "--ref", default=DEFAULT_REF, help="Git ref to tag."
+    )
+    _ = release_parser.add_argument(
+        "--title", default=None, help="Release title (defaults to tag)."
+    )
+    _ = release_parser.add_argument(
+        "--notes", default="", help="Release notes body."
+    )
+    _ = release_parser.add_argument(
+        "--draft", action="store_true", help="Create as a draft release."
+    )
+    _ = release_parser.add_argument(
+        "--prerelease",
+        action="store_true",
+        help="Create as a prerelease.",
+    )
+
     args = parser.parse_args()
     command = cast(str | None, getattr(args, "command", None))
     if command is None:
@@ -190,8 +274,33 @@ def parse_args() -> ParsedArgs:
             command=command,
             run_id=cast(int, args.run_id),
             ref=cast(str, args.ref),
+            tag=None,
+            title=None,
+            notes="",
+            draft=False,
+            prerelease=False,
         )
-    return ParsedArgs(command=command, run_id=None, ref=DEFAULT_REF)
+    if command == "release":
+        return ParsedArgs(
+            command=command,
+            run_id=None,
+            ref=cast(str, args.ref),
+            tag=cast(str, args.tag),
+            title=cast(str | None, args.title),
+            notes=cast(str, args.notes),
+            draft=cast(bool, args.draft),
+            prerelease=cast(bool, args.prerelease),
+        )
+    return ParsedArgs(
+        command=command,
+        run_id=None,
+        ref=DEFAULT_REF,
+        tag=None,
+        title=None,
+        notes="",
+        draft=False,
+        prerelease=False,
+    )
 
 
 def print_summary(
@@ -231,6 +340,21 @@ def main() -> None:
         if args.run_id is None or args.run_id <= 0:
             raise SystemExit("run_id must be a positive integer.")
         dispatch_run(session, args.run_id, args.ref)
+        return
+    if args.command == "release":
+        if not args.tag:
+            raise SystemExit("tag is required for release.")
+        sha = get_ref_sha(session, args.ref)
+        create_tag_ref(session, args.tag, sha)
+        create_release(
+            session,
+            args.tag,
+            args.ref,
+            args.title,
+            args.notes,
+            args.draft,
+            args.prerelease,
+        )
         return
     run = wait_for_run(session)
     run_id = run["id"]
