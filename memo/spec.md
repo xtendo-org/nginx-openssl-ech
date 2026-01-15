@@ -171,6 +171,18 @@ Domains used:
 - Each leaf uses SANs and a unique `server_name` in Nginx.
 
 Commands used in the workflow (certs, stored under a `test-certs/` directory, using the built OpenSSL CLI):
+- Ensure the OpenSSL config exists for the CLI:
+  - `mkdir -p test-openssl/ssl`
+  - `cat > test-openssl/ssl/openssl.cnf <<'EOF'`
+  - `openssl_conf = openssl_init`
+  - `[openssl_init]`
+  - `providers = provider_sect`
+  - `[provider_sect]`
+  - `default = default_sect`
+  - `[default_sect]`
+  - `activate = 1`
+  - `EOF`
+  - `export OPENSSL_CONF="$PWD/test-openssl/ssl/openssl.cnf"`
 - CA key and cert:
   - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out test-certs/ca.key`
   - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN req -x509 -new -key test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out test-certs/ca.crt`

@@ -594,6 +594,20 @@ jobs:
 
           OPENSSL_BIN="$PWD/test-openssl/bin/openssl"
           export LD_LIBRARY_PATH="$PWD/test-openssl/lib"
+          export OPENSSL_CONF="$PWD/test-openssl/ssl/openssl.cnf"
+          mkdir -p "$PWD/test-openssl/ssl"
+          cat > "$OPENSSL_CONF" <<'EOF'
+          openssl_conf = openssl_init
+
+          [openssl_init]
+          providers = provider_sect
+
+          [provider_sect]
+          default = default_sect
+
+          [default_sect]
+          activate = 1
+          EOF
 
           "$OPENSSL_BIN" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out test-certs/ca.key
           "$OPENSSL_BIN" req -x509 -new -key test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out test-certs/ca.crt
