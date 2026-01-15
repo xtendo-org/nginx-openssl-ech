@@ -17,6 +17,7 @@ WORKFLOW_FILE = "build-nginx-ech.yml"
 DEFAULT_REF = "main"
 
 POLL_SECONDS = 30
+POLL_SECONDS_MAX = 600
 POLL_ATTEMPTS = 20
 
 
@@ -97,12 +98,17 @@ def wait_for_run(session: requests.Session) -> WorkflowRun:
     if POLL_ATTEMPTS <= 0:
         raise SystemExit("POLL_ATTEMPTS must be positive.")
     remaining = POLL_ATTEMPTS
+
+    delay = POLL_SECONDS
     while True:
         try:
             run = get_latest_run(session)
         except requests.ConnectionError:
-            print("Connection error.")
-            sys.exit(-1)
+            delay = min(delay * 2, POLL_SECONDS_MAX)
+            print(f"Connection error. Sleeping for {delay=}")
+            time.sleep(delay)
+            continue
+
         status = run.get("status")
         if status not in {"queued", "in_progress"}:
             return run
