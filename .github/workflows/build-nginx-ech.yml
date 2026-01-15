@@ -29,7 +29,7 @@ env:
 
 jobs:
   init:
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04
     outputs:
       cache_ts: ${{ steps.ts.outputs.cache_ts }}
     steps:
@@ -38,7 +38,7 @@ jobs:
 
   cache-nginx:
     needs: init
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04
     steps:
       - name: Restore nginx cache
         uses: actions/cache/restore@v4
@@ -70,7 +70,7 @@ jobs:
 
   cache-pcre2:
     needs: init
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04
     steps:
       - name: Restore PCRE2 cache
         uses: actions/cache/restore@v4
@@ -100,7 +100,7 @@ jobs:
 
   cache-zlib:
     needs: init
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04
     steps:
       - name: Restore zlib cache
         uses: actions/cache/restore@v4
@@ -132,7 +132,7 @@ jobs:
 
   cache-openssl:
     needs: init
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04
     steps:
       - name: Restore OpenSSL cache
         uses: actions/cache/restore@v4
@@ -170,7 +170,7 @@ jobs:
 
   cache-ngx-brotli:
     needs: init
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04
     steps:
       - name: Restore ngx_brotli cache
         uses: actions/cache/restore@v4
@@ -210,7 +210,7 @@ jobs:
       - cache-zlib
       - cache-openssl
       - cache-ngx-brotli
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -370,7 +370,7 @@ jobs:
     needs:
       - init
       - cache-openssl
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Install build dependencies
         run: |
@@ -421,7 +421,7 @@ jobs:
     needs:
       - build-nginx
       - build-openssl-cli
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4

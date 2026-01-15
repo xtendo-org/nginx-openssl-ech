@@ -5,9 +5,11 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 
 ## CI Strategy
 - **Trigger**: GitHub Actions on push to `main`, `develop`, or `release`.
-- **Runner**: `ubuntu-24.04-arm64` for native builds and runtime smoke tests (no container).
+- **Runner**:
+  - Cache jobs run on `ubuntu-24.04` (x86_64) to maximize runner availability.
+  - Build and test jobs run on `ubuntu-24.04-arm` for native arm64 builds and runtime smoke tests (no container).
 - **Outputs**: A tarball containing the install prefix (default `/opt/nginx-ech`) plus a `BUILDINFO.txt`.
-- **Parallel input acquisition**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling.
+- **Parallel input acquisition**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) on `ubuntu-24.04` and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling.
 - **Parallel builds**:
   - `build-nginx` depends on `cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, and `cache-ngx-brotli`.
   - `build-openssl-cli` depends only on `cache-openssl`.
