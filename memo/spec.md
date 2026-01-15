@@ -213,7 +213,7 @@ Commands used in the workflow (certs, stored under a `test-certs/` directory, us
   - `ssl_protocols TLSv1.3;`
   - `add_header Alt-Svc 'h3=":8443"; ma=86400';`
   - `add_header QUIC-Status $http3;`
-- Each `server` block includes `conf/snippets/server_defaults.conf` for shared server directives:
+- Each `server` block includes `snippets/server_defaults.conf` for shared server directives:
   - `listen 127.0.0.1:8443 ssl http2;`
   - `listen 127.0.0.1:8443 quic reuseport;`
   - `http3 on;`
