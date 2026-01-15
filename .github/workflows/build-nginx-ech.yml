@@ -20,6 +20,7 @@ env:
   OPENSSL_REPO: "https://github.com/openssl/openssl.git"
   OPENSSL_BASE_TAG: "openssl-3.6.0"
   OPENSSL_BASE_COMMIT: "7b371d80d959ec9ab4139d09d78e83c090de9779"
+  OPENSSL_MASTER_REF: "master"
   OPENSSL_ECH_REF: "feature/ech"
   OPENSSL_ECH_COMMIT: "ac3b44faf3bb51592e5d7904168801bc72ae3556"
   NGX_BROTLI_REPO: "https://github.com/google/ngx_brotli.git"
@@ -160,6 +161,10 @@ jobs:
             git fetch origin "$OPENSSL_ECH_REF"
             cache_changed=1
           fi
+          if ! git rev-parse --verify "origin/$OPENSSL_MASTER_REF" >/dev/null 2>&1; then
+            git fetch origin "$OPENSSL_MASTER_REF"
+            cache_changed=1
+          fi
           echo "cache_changed=$cache_changed" >> "$GITHUB_OUTPUT"
       - name: Save OpenSSL cache
         if: steps.prep.outputs.cache_changed == '1'
@@ -294,9 +299,14 @@ jobs:
 
           cd "$BUILD_ROOT/openssl-nginx"
           git checkout "$OPENSSL_BASE_COMMIT"
+          git fetch origin "$OPENSSL_MASTER_REF" "$OPENSSL_ECH_REF"
+          BASE_COMMIT=$(git merge-base "origin/$OPENSSL_MASTER_REF" "origin/$OPENSSL_ECH_REF")
+          COMMITS=$(git rev-list --reverse "$BASE_COMMIT..$OPENSSL_ECH_COMMIT")
           git config user.name "CI Merge"
           git config user.email "ci@example.invalid"
-          git merge --no-ff --no-commit "$OPENSSL_ECH_COMMIT"
+          for c in $COMMITS; do
+            git cherry-pick "$c"
+          done
 
           cd "$BUILD_ROOT/ngx_brotli"
           git submodule update --init --recursive
@@ -400,9 +410,14 @@ jobs:
 
           cd "$BUILD_ROOT/openssl-cli"
           git checkout "$OPENSSL_BASE_COMMIT"
+          git fetch origin "$OPENSSL_MASTER_REF" "$OPENSSL_ECH_REF"
+          BASE_COMMIT=$(git merge-base "origin/$OPENSSL_MASTER_REF" "origin/$OPENSSL_ECH_REF")
+          COMMITS=$(git rev-list --reverse "$BASE_COMMIT..$OPENSSL_ECH_COMMIT")
           git config user.name "CI Merge"
           git config user.email "ci@example.invalid"
-          git merge --no-ff --no-commit "$OPENSSL_ECH_COMMIT"
+          for c in $COMMITS; do
+            git cherry-pick "$c"
+          done
 
           ./Configure linux-aarch64 \
             --prefix="$PWD/../../test-openssl" \

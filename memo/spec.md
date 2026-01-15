@@ -23,9 +23,14 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - Repo: `https://github.com/openssl/openssl.git`
   - Base tag: `openssl-3.6.0`
   - Base pin: `7b371d80d959ec9ab4139d09d78e83c090de9779`
+  - Master ref: `master`
   - ECH ref: `feature/ech`
   - ECH pin: `ac3b44faf3bb51592e5d7904168801bc72ae3556`
-  - Merge strategy: checkout the base tag commit and merge the ECH commit; fail the job on any merge conflict.
+  - Cherry-pick strategy:
+    - Compute the common ancestor of `origin/master` and `origin/feature/ech` with `git merge-base`.
+    - List commits in `feature/ech` after the common ancestor with `git rev-list --reverse`.
+    - Checkout the base tag commit and cherry-pick the list in order.
+    - Fail the job on any cherry-pick conflict.
 - **Brotli module (ngx_brotli)**:
   - Repo: `https://github.com/google/ngx_brotli.git`
   - Ref: `master`
@@ -53,12 +58,15 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 - Build is native (no cross-compile flags).
 - Nginx OpenSSL source tree:
   - Copy cached OpenSSL repo into `build/openssl-nginx`.
-  - Run the same merge step as the CLI build:
+  - Run the same cherry-pick step as the CLI build:
     - `git checkout 7b371d80d959ec9ab4139d09d78e83c090de9779`
+    - `git fetch origin master feature/ech`
+    - `BASE_COMMIT=$(git merge-base origin/master origin/feature/ech)`
+    - `COMMITS=$(git rev-list --reverse "$BASE_COMMIT..ac3b44faf3bb51592e5d7904168801bc72ae3556")`
     - `git config user.name "CI Merge"`
     - `git config user.email "ci@example.invalid"`
-    - `git merge --no-ff --no-commit ac3b44faf3bb51592e5d7904168801bc72ae3556`
-    - If the merge command exits non-zero, fail the job immediately.
+    - `for c in $COMMITS; do git cherry-pick "$c"; done`
+    - If any cherry-pick exits non-zero, fail the job immediately.
   - Pass `--with-openssl=build/openssl-nginx` to `./configure`.
 
 ### OpenSSL CLI (for tests)
@@ -66,10 +74,13 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 - Source directory: copy the cached OpenSSL repo into `build/openssl-cli`.
 - Merge step (performed inside `build/openssl-cli`):
   - `git checkout 7b371d80d959ec9ab4139d09d78e83c090de9779`
+  - `git fetch origin master feature/ech`
+  - `BASE_COMMIT=$(git merge-base origin/master origin/feature/ech)`
+  - `COMMITS=$(git rev-list --reverse "$BASE_COMMIT..ac3b44faf3bb51592e5d7904168801bc72ae3556")`
   - `git config user.name "CI Merge"`
   - `git config user.email "ci@example.invalid"`
-  - `git merge --no-ff --no-commit ac3b44faf3bb51592e5d7904168801bc72ae3556`
-  - If the merge command exits non-zero, fail the job immediately.
+  - `for c in $COMMITS; do git cherry-pick "$c"; done`
+  - If any cherry-pick exits non-zero, fail the job immediately.
 - Configure and install:
   - `cd build/openssl-cli`
   - `./Configure linux-aarch64 --prefix="$PWD/../../test-openssl" --openssldir="$PWD/../../test-openssl/ssl" --libdir=lib no-tests`
@@ -100,7 +111,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - Cache directories: `~/.cache/nginx-ech/openssl`, `~/.cache/nginx-ech/ngx_brotli`.
   - OpenSSL cache validation:
     - Run `git cat-file -e 7b371d80d959ec9ab4139d09d78e83c090de9779^{commit}` and `git cat-file -e ac3b44faf3bb51592e5d7904168801bc72ae3556^{commit}`.
-    - If either command fails, run `git fetch origin openssl-3.6.0 feature/ech` and set `CACHE_CHANGED=1`.
+    - If either command fails, run `git fetch origin openssl-3.6.0 master feature/ech` and set `CACHE_CHANGED=1`.
   - ngx_brotli cache validation:
     - Run `git cat-file -e a71f9312c2deb28875acc7bacfdd5695a111aa53^{commit}`.
     - If it fails, run `git fetch origin master` and set `CACHE_CHANGED=1`.
