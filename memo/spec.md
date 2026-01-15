@@ -170,7 +170,7 @@ Domains used:
 - Leaf certs: `outer.example.test`, `this.doesnt.exist`, `whats.going.on`, `bananas.arent.real`, `blue.seaglass`
 - Each leaf uses SANs and a unique `server_name` in Nginx.
 
-Commands used in the workflow (certs, stored under a `test-certs/` directory, using the built OpenSSL CLI):
+Commands used in the workflow (certs stored under `conf/test-certs/`, with a `test-certs` symlink for Nginx path resolution, using the built OpenSSL CLI):
 - Ensure the OpenSSL config exists for the CLI:
   - `mkdir -p test-openssl/ssl`
   - `cat > test-openssl/ssl/openssl.cnf <<'EOF'`
@@ -183,29 +183,33 @@ Commands used in the workflow (certs, stored under a `test-certs/` directory, us
   - `activate = 1`
   - `EOF`
   - `export OPENSSL_CONF="$PWD/test-openssl/ssl/openssl.cnf"`
+- Prepare directories and symlinks:
+  - `mkdir -p conf/test-certs conf/test-ech`
+  - `ln -sfn conf/test-certs test-certs`
+  - `ln -sfn conf/test-ech test-ech`
 - CA key and cert:
-  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out test-certs/ca.key`
-  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN req -x509 -new -key test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out test-certs/ca.crt`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out conf/test-certs/ca.key`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN req -x509 -new -key conf/test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out conf/test-certs/ca.crt`
 - Leaf certs (loop per domain in the list above, with `NAME` derived by replacing dots with underscores):
-  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "test-certs/${NAME}.key"`
-  - `printf 'subjectAltName=DNS:%s\n' "$DOMAIN" > test-certs/san.cnf`
-  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN req -new -key "test-certs/${NAME}.key" -subj "/CN=${DOMAIN}" -out "test-certs/${NAME}.csr"`
-  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN x509 -req -in "test-certs/${NAME}.csr" -CA test-certs/ca.crt -CAkey test-certs/ca.key -CAcreateserial -days 30 -sha256 -extfile test-certs/san.cnf -out "test-certs/${NAME}.crt"`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "conf/test-certs/${NAME}.key"`
+  - `printf 'subjectAltName=DNS:%s\n' "$DOMAIN" > conf/test-certs/san.cnf`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN req -new -key "conf/test-certs/${NAME}.key" -subj "/CN=${DOMAIN}" -out "conf/test-certs/${NAME}.csr"`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN x509 -req -in "conf/test-certs/${NAME}.csr" -CA conf/test-certs/ca.crt -CAkey conf/test-certs/ca.key -CAcreateserial -days 30 -sha256 -extfile conf/test-certs/san.cnf -out "conf/test-certs/${NAME}.crt"`
 
 ### ECH Config
 - Use the OpenSSL ECH branch tooling to generate:
   - ECH key material for the server.
   - An ECHConfigList blob for the client.
-- Store files under `test-ech/` in the workflow workspace.
+- Store files under `conf/test-ech/` in the workflow workspace, with a `test-ech` symlink.
 - Commands used in the workflow:
   - List ECH-related subcommands and options for debugging:
     - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN list -commands | grep -i ech`
     - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN help ech`
   - Produce a PEM bundle with the ECH key and config:
-    - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN ech -public_name outer.example.test -out test-ech/echconfig.pem`
+    - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN ech -public_name outer.example.test -out conf/test-ech/echconfig.pem`
   - Extract the ECHConfigList for the client:
-    - `awk 'BEGIN{in_block=0} /BEGIN ECH/{in_block=1; next} /END ECH/{in_block=0} in_block{print}' test-ech/echconfig.pem | tr -d '\n' > test-ech/echconfig.b64`
-    - `base64 -d test-ech/echconfig.b64 > test-ech/echconfig.bin`
+    - `awk 'BEGIN{in_block=0} /BEGIN ECH/{in_block=1; next} /END ECH/{in_block=0} in_block{print}' conf/test-ech/echconfig.pem | tr -d '\n' > conf/test-ech/echconfig.b64`
+    - `base64 -d conf/test-ech/echconfig.b64 > conf/test-ech/echconfig.bin`
 
 ### Nginx Test Config
 - Use the repo file `conf/nginx.conf` (static file, no templating).
@@ -220,7 +224,7 @@ Commands used in the workflow (certs, stored under a `test-certs/` directory, us
   - `http3 on;`
   - `ssl_ech_file test-ech/echconfig.pem;`
 - Each `server` block defines a unique `server_name`, leaf cert/key pair, and a unique response body.
-- All certificate and ECH file paths are relative (`test-certs/...`, `test-ech/...`), so tests must launch Nginx with the workspace as the prefix:
+- Certificate/ECH paths are relative in the config, so tests must launch Nginx with the workspace as the prefix, and the workflow creates `test-certs`/`test-ech` symlinks pointing at `conf/test-certs` and `conf/test-ech`:
   - `nginx -p "$PWD" -c conf/nginx.conf -g 'daemon off;'`
 
 ### Client Validation
@@ -236,8 +240,8 @@ printf 'GET / HTTP/1.1\r\nHost: this.doesnt.exist\r\nConnection: close\r\n\r\n' 
   LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN s_client \
     -connect 127.0.0.1:8443 \
     -servername this.doesnt.exist \
-    -CAfile "$PWD/test-certs/ca.crt" \
-    -ech_config "$PWD/test-ech/echconfig.bin" \
+    -CAfile "$PWD/conf/test-certs/ca.crt" \
+    -ech_config "$PWD/conf/test-ech/echconfig.bin" \
     -quiet
 ```
 
