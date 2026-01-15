@@ -851,6 +851,17 @@ jobs:
                 -ech_outer_sni outer.example.test \
                 -trace \
                 -quiet \
+                >"$TRACE_LOG" 2>&1
+            grep -q "encrypted_client_hello" "$TRACE_LOG"
+
+            printf 'GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "$DOMAIN" | \
+              LD_LIBRARY_PATH="$PWD/test-openssl/lib" "$OPENSSL_BIN" s_client \
+                -connect 127.0.0.1:8443 \
+                -servername "$DOMAIN" \
+                -CAfile "$CERT_DIR/ca.crt" \
+                -ech_config_list "$ECH_CONFIG_LIST" \
+                -ech_outer_sni outer.example.test \
+                -quiet \
                 >"$RESPONSE_RAW" 2>"$TRACE_LOG"
 
             awk 'BEGIN{body=0} /^\r?$/{body=1; next} {if(body) print}' \
