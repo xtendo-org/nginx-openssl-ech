@@ -7,6 +7,15 @@ on:
       - develop
       - release
   workflow_dispatch:
+    inputs:
+      skip_builds:
+        description: "Skip build jobs and use artifacts from another run."
+        type: boolean
+        default: false
+      artifact_run_id:
+        description: "Run ID to download artifacts from (optional)."
+        type: string
+        default: ""
 
 env:
   NGINX_VERSION: "1.29.4"
@@ -81,6 +90,7 @@ jobs:
   cache-nginx:
     needs: init
     runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true' }}
     steps:
       - name: Restore nginx cache
         uses: actions/cache/restore@v4
@@ -113,6 +123,7 @@ jobs:
   cache-pcre2:
     needs: init
     runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true' }}
     steps:
       - name: Restore PCRE2 cache
         uses: actions/cache/restore@v4
@@ -143,6 +154,7 @@ jobs:
   cache-zlib:
     needs: init
     runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true' }}
     steps:
       - name: Restore zlib cache
         uses: actions/cache/restore@v4
@@ -175,6 +187,7 @@ jobs:
   cache-openssl:
     needs: init
     runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true' }}
     steps:
       - name: Restore OpenSSL cache
         uses: actions/cache/restore@v4
@@ -217,6 +230,7 @@ jobs:
   cache-ngx-brotli:
     needs: init
     runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true' }}
     steps:
       - name: Restore ngx_brotli cache
         uses: actions/cache/restore@v4
@@ -258,6 +272,7 @@ jobs:
       - cache-openssl
       - cache-ngx-brotli
     runs-on: ubuntu-24.04-arm
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -438,6 +453,7 @@ jobs:
       - cache-apt
       - cache-openssl
     runs-on: ubuntu-24.04-arm
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true' }}
     steps:
       - name: Prepare apt cache dir
         run: |
@@ -548,6 +564,9 @@ jobs:
       - build-nginx
       - build-openssl-cli
     runs-on: ubuntu-24.04-arm
+    if: >-
+      ${{ always() && (needs.build-nginx.result == 'success' || needs.build-nginx.result == 'skipped') &&
+          (needs.build-openssl-cli.result == 'success' || needs.build-openssl-cli.result == 'skipped') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -568,14 +587,38 @@ jobs:
           sudo chown -R root:root /var/cache/apt/archives
           sudo apt-get update
           sudo apt-get install -y $APT_PACKAGES_TEST
-      - name: Download artifacts
+      - name: Validate artifact source
+        if: >-
+          ${{ github.event_name == 'workflow_dispatch' &&
+              github.event.inputs.skip_builds == 'true' &&
+              github.event.inputs.artifact_run_id == '' }}
+        run: |
+          echo "artifact_run_id is required when skip_builds=true."
+          exit 1
+      - name: Download nginx artifact (current run)
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.artifact_run_id == '' }}
         uses: actions/download-artifact@v4
         with:
           name: nginx-ech-arm64
-      - name: Download OpenSSL CLI artifact
+      - name: Download nginx artifact (from run)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.artifact_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: nginx-ech-arm64
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.inputs.artifact_run_id }}
+      - name: Download OpenSSL CLI artifact (current run)
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.artifact_run_id == '' }}
         uses: actions/download-artifact@v4
         with:
           name: openssl-cli
+      - name: Download OpenSSL CLI artifact (from run)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.artifact_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: openssl-cli
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.inputs.artifact_run_id }}
       - name: Extract artifacts
         run: |
           set -euxo pipefail

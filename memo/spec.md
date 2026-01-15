@@ -4,17 +4,22 @@
 Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules; glibc dynamic), then run an end-to-end ECH smoke test in CI using the OpenSSL ECH tooling. Produce a release-ready tarball that can be deployed to a Raspberry Pi.
 
 ## CI Strategy
-- **Trigger**: GitHub Actions on push to `main`, `develop`, or `release`.
+- **Trigger**: GitHub Actions on push to `main`, `develop`, or `release`. Manual runs use `workflow_dispatch`.
+- **Manual test mode**: `workflow_dispatch` exposes:
+  - `skip_builds` (boolean, default false) to skip build jobs and reuse artifacts.
+  - `artifact_run_id` (string, optional) to download artifacts from a previous run.
+  - When `skip_builds=true`, build input cache jobs (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) and build jobs (`build-nginx`, `build-openssl-cli`) are skipped, and `test-ech` downloads artifacts from `artifact_run_id`.
+  - If `skip_builds=true` and `artifact_run_id` is empty, fail `test-ech` with a clear message.
 - **Runner**:
   - Cache jobs run on `ubuntu-24.04` (x86_64) to maximize runner availability.
   - Build and test jobs run on `ubuntu-24.04-arm` for native arm64 builds and runtime smoke tests (no container).
 - **Outputs**: A tarball containing the install prefix (default `/opt/nginx-ech`) plus a `BUILDINFO.txt`.
-- **Parallel input acquisition**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) on `ubuntu-24.04` and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling.
+- **Parallel input acquisition**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) on `ubuntu-24.04` and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling. Skip these cache jobs when `skip_builds=true`.
 - **APT cache job**: Add `cache-apt` on `ubuntu-24.04-arm` to populate and cache `/var/cache/apt/archives` for arm64 packages. All build/test jobs depend on `cache-apt` and restore the APT cache before installing packages.
 - **Parallel builds**:
   - `build-nginx` depends on `cache-apt`, `cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, and `cache-ngx-brotli`.
   - `build-openssl-cli` depends on `cache-apt` and `cache-openssl`.
-  - `test-ech` depends on `cache-apt`, `build-nginx`, and `build-openssl-cli`.
+  - `test-ech` depends on `cache-apt`, `build-nginx`, and `build-openssl-cli`, but is gated to run only when the build jobs succeeded or were skipped.
 
 ## Build Inputs (Pinned)
 - **Nginx**: 1.29.4.
