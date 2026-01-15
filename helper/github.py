@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import time
 import zipfile
 from collections.abc import Iterable
@@ -97,7 +98,11 @@ def wait_for_run(session: requests.Session) -> WorkflowRun:
         raise SystemExit("POLL_ATTEMPTS must be positive.")
     remaining = POLL_ATTEMPTS
     while True:
-        run = get_latest_run(session)
+        try:
+            run = get_latest_run(session)
+        except requests.ConnectionError:
+            print("Connection error.")
+            sys.exit(-1)
         status = run.get("status")
         if status not in {"queued", "in_progress"}:
             return run
