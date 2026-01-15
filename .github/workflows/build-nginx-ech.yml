@@ -1,0 +1,526 @@
+name: Build nginx ECH (arm64)
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - release
+  workflow_dispatch:
+
+env:
+  NGINX_VERSION: "1.29.4"
+  NGINX_TARBALL_PRIMARY: "https://github.com/nginx/nginx/archive/refs/tags/release-1.29.4.tar.gz"
+  NGINX_TARBALL_FALLBACK: "https://nginx.org/download/nginx-1.29.4.tar.gz"
+  PCRE2_VERSION: "10.47"
+  PCRE2_TARBALL: "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.47/pcre2-10.47.tar.gz"
+  ZLIB_VERSION: "1.3.1"
+  ZLIB_TARBALL_PRIMARY: "https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz"
+  ZLIB_TARBALL_FALLBACK: "https://zlib.net/zlib-1.3.1.tar.gz"
+  OPENSSL_REPO: "https://github.com/openssl/openssl.git"
+  OPENSSL_BASE_TAG: "openssl-3.6.0"
+  OPENSSL_BASE_COMMIT: "7b371d80d959ec9ab4139d09d78e83c090de9779"
+  OPENSSL_ECH_REF: "feature/ech"
+  OPENSSL_ECH_COMMIT: "ac3b44faf3bb51592e5d7904168801bc72ae3556"
+  NGX_BROTLI_REPO: "https://github.com/google/ngx_brotli.git"
+  NGX_BROTLI_REF: "master"
+  NGX_BROTLI_COMMIT: "a71f9312c2deb28875acc7bacfdd5695a111aa53"
+  PREFIX: "/opt/nginx-ech"
+
+jobs:
+  init:
+    runs-on: ubuntu-24.04-arm64
+    outputs:
+      cache_ts: ${{ steps.ts.outputs.cache_ts }}
+    steps:
+      - id: ts
+        run: echo "cache_ts=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
+
+  cache-nginx:
+    needs: init
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Restore nginx cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/nginx
+          key: nginx-${{ needs.init.outputs.cache_ts }}
+          restore-keys: nginx-
+      - name: Ensure nginx tarball
+        id: prep
+        run: |
+          set -euxo pipefail
+          CACHE_DIR="$HOME/.cache/nginx-ech/nginx"
+          mkdir -p "$CACHE_DIR"
+          TARBALL="$CACHE_DIR/nginx-${NGINX_VERSION}.tar.gz"
+          if [ ! -f "$TARBALL" ]; then
+            if ! curl -fL "$NGINX_TARBALL_PRIMARY" -o "$TARBALL"; then
+              curl -fL "$NGINX_TARBALL_FALLBACK" -o "$TARBALL"
+            fi
+            echo "cache_changed=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_changed=0" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save nginx cache
+        if: steps.prep.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/nginx-ech/nginx
+          key: nginx-${{ needs.init.outputs.cache_ts }}
+
+  cache-pcre2:
+    needs: init
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Restore PCRE2 cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/pcre2
+          key: pcre2-${{ needs.init.outputs.cache_ts }}
+          restore-keys: pcre2-
+      - name: Ensure PCRE2 tarball
+        id: prep
+        run: |
+          set -euxo pipefail
+          CACHE_DIR="$HOME/.cache/nginx-ech/pcre2"
+          mkdir -p "$CACHE_DIR"
+          TARBALL="$CACHE_DIR/pcre2-${PCRE2_VERSION}.tar.gz"
+          if [ ! -f "$TARBALL" ]; then
+            curl -fL "$PCRE2_TARBALL" -o "$TARBALL"
+            echo "cache_changed=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_changed=0" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save PCRE2 cache
+        if: steps.prep.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/nginx-ech/pcre2
+          key: pcre2-${{ needs.init.outputs.cache_ts }}
+
+  cache-zlib:
+    needs: init
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Restore zlib cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/zlib
+          key: zlib-${{ needs.init.outputs.cache_ts }}
+          restore-keys: zlib-
+      - name: Ensure zlib tarball
+        id: prep
+        run: |
+          set -euxo pipefail
+          CACHE_DIR="$HOME/.cache/nginx-ech/zlib"
+          mkdir -p "$CACHE_DIR"
+          TARBALL="$CACHE_DIR/zlib-${ZLIB_VERSION}.tar.gz"
+          if [ ! -f "$TARBALL" ]; then
+            if ! curl -fL "$ZLIB_TARBALL_PRIMARY" -o "$TARBALL"; then
+              curl -fL "$ZLIB_TARBALL_FALLBACK" -o "$TARBALL"
+            fi
+            echo "cache_changed=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_changed=0" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save zlib cache
+        if: steps.prep.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/nginx-ech/zlib
+          key: zlib-${{ needs.init.outputs.cache_ts }}
+
+  cache-openssl:
+    needs: init
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Restore OpenSSL cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/openssl
+          key: openssl-${{ needs.init.outputs.cache_ts }}
+          restore-keys: openssl-
+      - name: Ensure OpenSSL repo
+        id: prep
+        run: |
+          set -euxo pipefail
+          CACHE_DIR="$HOME/.cache/nginx-ech/openssl"
+          cache_changed=0
+          if [ ! -d "$CACHE_DIR/.git" ]; then
+            rm -rf "$CACHE_DIR"
+            git clone "$OPENSSL_REPO" "$CACHE_DIR"
+            cache_changed=1
+          fi
+          cd "$CACHE_DIR"
+          if ! git cat-file -e "$OPENSSL_BASE_COMMIT^{commit}"; then
+            git fetch origin "$OPENSSL_BASE_TAG"
+            cache_changed=1
+          fi
+          if ! git cat-file -e "$OPENSSL_ECH_COMMIT^{commit}"; then
+            git fetch origin "$OPENSSL_ECH_REF"
+            cache_changed=1
+          fi
+          echo "cache_changed=$cache_changed" >> "$GITHUB_OUTPUT"
+      - name: Save OpenSSL cache
+        if: steps.prep.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/nginx-ech/openssl
+          key: openssl-${{ needs.init.outputs.cache_ts }}
+
+  cache-ngx-brotli:
+    needs: init
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Restore ngx_brotli cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/ngx_brotli
+          key: ngx-brotli-${{ needs.init.outputs.cache_ts }}
+          restore-keys: ngx-brotli-
+      - name: Ensure ngx_brotli repo
+        id: prep
+        run: |
+          set -euxo pipefail
+          CACHE_DIR="$HOME/.cache/nginx-ech/ngx_brotli"
+          cache_changed=0
+          if [ ! -d "$CACHE_DIR/.git" ]; then
+            rm -rf "$CACHE_DIR"
+            git clone "$NGX_BROTLI_REPO" "$CACHE_DIR"
+            cache_changed=1
+          fi
+          cd "$CACHE_DIR"
+          if ! git cat-file -e "$NGX_BROTLI_COMMIT^{commit}"; then
+            git fetch origin "$NGX_BROTLI_REF"
+            cache_changed=1
+          fi
+          echo "cache_changed=$cache_changed" >> "$GITHUB_OUTPUT"
+      - name: Save ngx_brotli cache
+        if: steps.prep.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/nginx-ech/ngx_brotli
+          key: ngx-brotli-${{ needs.init.outputs.cache_ts }}
+
+  restore-ccache-cache:
+    needs: init
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/ccache
+          key: ccache-${{ needs.init.outputs.cache_ts }}
+          restore-keys: ccache-
+
+  build-nginx:
+    needs:
+      - init
+      - cache-nginx
+      - cache-pcre2
+      - cache-zlib
+      - cache-openssl
+      - cache-ngx-brotli
+      - restore-ccache-cache
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ca-certificates \
+            ccache \
+            cmake \
+            git \
+            ninja-build \
+            perl \
+            pkg-config
+      - name: Restore build input caches
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/nginx
+          key: nginx-${{ needs.init.outputs.cache_ts }}
+          restore-keys: nginx-
+      - name: Restore PCRE2 cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/pcre2
+          key: pcre2-${{ needs.init.outputs.cache_ts }}
+          restore-keys: pcre2-
+      - name: Restore zlib cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/zlib
+          key: zlib-${{ needs.init.outputs.cache_ts }}
+          restore-keys: zlib-
+      - name: Restore OpenSSL cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/openssl
+          key: openssl-${{ needs.init.outputs.cache_ts }}
+          restore-keys: openssl-
+      - name: Restore ngx_brotli cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/ngx_brotli
+          key: ngx-brotli-${{ needs.init.outputs.cache_ts }}
+          restore-keys: ngx-brotli-
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/ccache
+          key: ccache-${{ needs.init.outputs.cache_ts }}
+          restore-keys: ccache-
+      - name: Build nginx
+        run: |
+          set -euxo pipefail
+
+          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
+          mkdir -p "$CCACHE_DIR"
+          find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$CCACHE_DIR/.ccache.hash.before"
+
+          export PATH="/usr/lib/ccache:$PATH"
+          export CC="ccache gcc"
+
+          BUILD_ROOT="$PWD/build"
+          DIST_ROOT="$PWD/dist"
+          mkdir -p "$BUILD_ROOT" "$DIST_ROOT"
+
+          mkdir -p "$BUILD_ROOT/nginx" "$BUILD_ROOT/pcre2" "$BUILD_ROOT/zlib"
+          tar -xf "$HOME/.cache/nginx-ech/nginx/nginx-${NGINX_VERSION}.tar.gz" -C "$BUILD_ROOT/nginx" --strip-components=1
+          tar -xf "$HOME/.cache/nginx-ech/pcre2/pcre2-${PCRE2_VERSION}.tar.gz" -C "$BUILD_ROOT/pcre2" --strip-components=1
+          tar -xf "$HOME/.cache/nginx-ech/zlib/zlib-${ZLIB_VERSION}.tar.gz" -C "$BUILD_ROOT/zlib" --strip-components=1
+
+          rm -rf "$BUILD_ROOT/openssl-nginx" "$BUILD_ROOT/ngx_brotli"
+          cp -a "$HOME/.cache/nginx-ech/openssl" "$BUILD_ROOT/openssl-nginx"
+          cp -a "$HOME/.cache/nginx-ech/ngx_brotli" "$BUILD_ROOT/ngx_brotli"
+
+          cd "$BUILD_ROOT/openssl-nginx"
+          git checkout "$OPENSSL_BASE_COMMIT"
+          git merge --no-ff --no-commit "$OPENSSL_ECH_COMMIT"
+
+          cd "$BUILD_ROOT/ngx_brotli"
+          git submodule update --init --recursive
+
+          cd "$BUILD_ROOT/nginx"
+          ./configure \
+            --prefix="$PREFIX" \
+            --with-http_ssl_module \
+            --with-http_v2_module \
+            --with-http_v3_module \
+            --with-http_gzip_static_module \
+            --with-http_stub_status_module \
+            --with-http_realip_module \
+            --with-http_slice_module \
+            --with-pcre="$BUILD_ROOT/pcre2" \
+            --with-zlib="$BUILD_ROOT/zlib" \
+            --with-openssl="$BUILD_ROOT/openssl-nginx" \
+            --with-openssl-opt="no-shared no-tests" \
+            --add-module="$BUILD_ROOT/ngx_brotli"
+
+          make -j"$(nproc)"
+          make install DESTDIR="$DIST_ROOT"
+
+          BUILDINFO="$DIST_ROOT$PREFIX/BUILDINFO.txt"
+          {
+            echo "built_at=$(date -u +%FT%TZ)"
+            echo "nginx_version=$NGINX_VERSION"
+            echo "openssl_base_tag=$OPENSSL_BASE_TAG"
+            echo "openssl_base_commit=$OPENSSL_BASE_COMMIT"
+            echo "openssl_ech_ref=$OPENSSL_ECH_REF"
+            echo "openssl_ech_commit=$OPENSSL_ECH_COMMIT"
+            echo "ngx_brotli_commit=$NGX_BROTLI_COMMIT"
+            echo "pcre2_version=$PCRE2_VERSION"
+            echo "zlib_version=$ZLIB_VERSION"
+          } > "$BUILDINFO"
+
+          TAR_NAME="nginx-${NGINX_VERSION}-ech-linux-arm64.tar.gz"
+          tar -C "$DIST_ROOT" -czf "$PWD/$TAR_NAME" .
+          echo "tar_path=$PWD/$TAR_NAME" >> "$GITHUB_OUTPUT"
+        id: package
+      - name: Upload nginx artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-ech-arm64
+          path: ${{ steps.package.outputs.tar_path }}
+      - name: Upload ccache artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccache-dir
+          path: ~/.cache/nginx-ech/ccache
+
+  build-openssl-cli:
+    needs:
+      - init
+      - cache-openssl
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ca-certificates \
+            git \
+            perl
+      - name: Restore OpenSSL cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/openssl
+          key: openssl-${{ needs.init.outputs.cache_ts }}
+          restore-keys: openssl-
+      - name: Build OpenSSL CLI
+        run: |
+          set -euxo pipefail
+
+          BUILD_ROOT="$PWD/build"
+          mkdir -p "$BUILD_ROOT"
+          rm -rf "$BUILD_ROOT/openssl-cli"
+          cp -a "$HOME/.cache/nginx-ech/openssl" "$BUILD_ROOT/openssl-cli"
+
+          cd "$BUILD_ROOT/openssl-cli"
+          git checkout "$OPENSSL_BASE_COMMIT"
+          git merge --no-ff --no-commit "$OPENSSL_ECH_COMMIT"
+
+          ./Configure linux-aarch64 \
+            --prefix="$PWD/../../test-openssl" \
+            --openssldir="$PWD/../../test-openssl/ssl" \
+            --libdir=lib \
+            no-tests
+          make -j"$(nproc)"
+          make install_sw
+
+          tar -C "$PWD/../../test-openssl" -czf "$PWD/../../openssl-cli.tar.gz" .
+          echo "tar_path=$PWD/../../openssl-cli.tar.gz" >> "$GITHUB_OUTPUT"
+        id: package
+      - name: Upload OpenSSL CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-cli
+          path: ${{ steps.package.outputs.tar_path }}
+
+  test-ech:
+    needs:
+      - build-nginx
+      - build-openssl-cli
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils \
+            openssl
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nginx-ech-arm64
+      - name: Download OpenSSL CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openssl-cli
+      - name: Extract artifacts
+        run: |
+          set -euxo pipefail
+          tar -xzf nginx-*.tar.gz
+          mkdir -p test-openssl
+          tar -xzf openssl-cli.tar.gz -C test-openssl
+      - name: glibc check
+        run: |
+          set -euxo pipefail
+          ldd --version
+          readelf --version-info ./opt/nginx-ech/sbin/nginx | grep -o 'GLIBC_[0-9.]*' | sort -u
+      - name: Generate certs and ECH config
+        run: |
+          set -euxo pipefail
+          mkdir -p test-certs test-ech logs
+
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out test-certs/ca.key
+          openssl req -x509 -new -key test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out test-certs/ca.crt
+
+          for DOMAIN in outer.example.test this.doesnt.exist whats.going.on bananas.arent.real blue.seaglass; do
+            NAME=$(printf "%s" "$DOMAIN" | tr '.' '_')
+            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "test-certs/${NAME}.key"
+            printf 'subjectAltName=DNS:%s\n' "$DOMAIN" > test-certs/san.cnf
+            openssl req -new -key "test-certs/${NAME}.key" -subj "/CN=${DOMAIN}" -out "test-certs/${NAME}.csr"
+            openssl x509 -req -in "test-certs/${NAME}.csr" -CA test-certs/ca.crt -CAkey test-certs/ca.key -CAcreateserial -days 30 -sha256 -extfile test-certs/san.cnf -out "test-certs/${NAME}.crt"
+          done
+
+          OPENSSL_BIN="$PWD/test-openssl/bin/openssl"
+          export OPENSSL_BIN
+          export LD_LIBRARY_PATH="$PWD/test-openssl/lib"
+
+          "$OPENSSL_BIN" list -commands | grep -i ech
+          "$OPENSSL_BIN" help ech
+          "$OPENSSL_BIN" genpkey -algorithm X25519 -out test-ech/ech.key
+          "$OPENSSL_BIN" ech -public_name outer.example.test -key test-ech/ech.key -out test-ech/echconfig.bin -out_b64 test-ech/echconfig.b64
+      - name: Run ECH smoke tests
+        run: |
+          set -euxo pipefail
+          OPENSSL_BIN="$PWD/test-openssl/bin/openssl"
+          export LD_LIBRARY_PATH="$PWD/test-openssl/lib"
+
+          ./opt/nginx-ech/sbin/nginx -p "$PWD" -c conf/nginx.conf -t
+          ./opt/nginx-ech/sbin/nginx -p "$PWD" -c conf/nginx.conf -g 'daemon off;' &
+          NGINX_PID=$!
+          sleep 1
+
+          for DOMAIN in this.doesnt.exist whats.going.on bananas.arent.real blue.seaglass; do
+            RESPONSE=$(
+              printf 'GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "$DOMAIN" | \
+                LD_LIBRARY_PATH="$PWD/test-openssl/lib" "$OPENSSL_BIN" s_client \
+                  -connect 127.0.0.1:8443 \
+                  -servername "$DOMAIN" \
+                  -CAfile "$PWD/test-certs/ca.crt" \
+                  -ech_config "$PWD/test-ech/echconfig.bin" \
+                  -quiet
+            )
+            echo "$RESPONSE" | grep -q "$DOMAIN"
+          done
+
+          ./opt/nginx-ech/sbin/nginx -p "$PWD" -c conf/nginx.conf -s quit
+          wait "$NGINX_PID"
+
+  create-ccache-cache:
+    if: always()
+    needs:
+      - init
+      - build-nginx
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - name: Download ccache artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ccache-dir
+          path: ~/.cache/nginx-ech/ccache
+      - name: Decide whether to save ccache
+        id: decide
+        run: |
+          set -euxo pipefail
+          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
+          BEFORE_HASH=""
+          if [ -f "$CCACHE_DIR/.ccache.hash.before" ]; then
+            BEFORE_HASH=$(cat "$CCACHE_DIR/.ccache.hash.before")
+          fi
+          AFTER_HASH=$(find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          echo "$AFTER_HASH" > "$CCACHE_DIR/.ccache.hash.after"
+          if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
+            echo "cache_changed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_changed=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save ccache cache
+        if: steps.decide.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/nginx-ech/ccache
+          key: ccache-${{ needs.init.outputs.cache_ts }}
