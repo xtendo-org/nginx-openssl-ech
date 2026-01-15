@@ -658,6 +658,7 @@ jobs:
       - name: Download artifacts (from release)
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.artifact_release_tag != '' }}
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.inputs.artifact_release_tag }}
           NGINX_ASSET: nginx-${{ env.NGINX_VERSION }}-ech-linux-arm64.tar.gz
           OPENSSL_ASSET: openssl-cli.tar.gz
@@ -719,6 +720,7 @@ jobs:
       - name: Download artifacts (from latest release)
         if: ${{ github.ref == 'refs/heads/ci/test-only' }}
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENSSL_ASSET: openssl-cli.tar.gz
         run: |
           set -euxo pipefail
