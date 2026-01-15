@@ -280,8 +280,9 @@ jobs:
           set -euxo pipefail
 
           CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
-          mkdir -p "$CCACHE_DIR"
-          find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$CCACHE_DIR/.ccache.hash.before"
+          HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"
+          mkdir -p "$CCACHE_DIR" "$HASH_DIR"
+          find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
 
           export PATH="/usr/lib/ccache:$PATH"
           export CC="ccache gcc"
@@ -507,12 +508,14 @@ jobs:
         run: |
           set -euxo pipefail
           CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
+          HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"
           BEFORE_HASH=""
-          if [ -f "$CCACHE_DIR/.ccache.hash.before" ]; then
-            BEFORE_HASH=$(cat "$CCACHE_DIR/.ccache.hash.before")
+          if [ -f "$HASH_DIR/ccache.hash.before" ]; then
+            BEFORE_HASH=$(cat "$HASH_DIR/ccache.hash.before")
           fi
           AFTER_HASH=$(find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
-          echo "$AFTER_HASH" > "$CCACHE_DIR/.ccache.hash.after"
+          mkdir -p "$HASH_DIR"
+          echo "$AFTER_HASH" > "$HASH_DIR/ccache.hash.after"
           if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
             echo "cache_changed=0" >> "$GITHUB_OUTPUT"
           else
