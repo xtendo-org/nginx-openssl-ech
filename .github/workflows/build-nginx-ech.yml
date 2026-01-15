@@ -202,17 +202,6 @@ jobs:
           path: ~/.cache/nginx-ech/ngx_brotli
           key: ngx-brotli-${{ needs.init.outputs.cache_ts }}
 
-  restore-ccache-cache:
-    needs: init
-    runs-on: ubuntu-24.04-arm64
-    steps:
-      - name: Restore ccache
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.cache/nginx-ech/ccache
-          key: ccache-${{ needs.init.outputs.cache_ts }}
-          restore-keys: ccache-
-
   build-nginx:
     needs:
       - init
@@ -221,7 +210,6 @@ jobs:
       - cache-zlib
       - cache-openssl
       - cache-ngx-brotli
-      - restore-ccache-cache
     runs-on: ubuntu-24.04-arm64
     steps:
       - name: Checkout
@@ -275,15 +263,19 @@ jobs:
           path: ~/.cache/nginx-ech/ccache
           key: ccache-${{ needs.init.outputs.cache_ts }}
           restore-keys: ccache-
-      - name: Build nginx
+      - name: Record ccache hash (before build)
         run: |
           set -euxo pipefail
-
           CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
           HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"
           mkdir -p "$CCACHE_DIR" "$HASH_DIR"
           find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
 
+      - name: Build nginx and package
+        run: |
+          set -euxo pipefail
+
+          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
           export PATH="/usr/lib/ccache:$PATH"
           export CC="ccache gcc"
 
@@ -348,12 +340,31 @@ jobs:
         with:
           name: nginx-ech-arm64
           path: ${{ steps.package.outputs.tar_path }}
-      - name: Upload ccache artifact
+      - name: Decide whether to save ccache
         if: always()
-        uses: actions/upload-artifact@v4
+        id: ccache
+        run: |
+          set -euxo pipefail
+          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
+          HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"
+          BEFORE_HASH=""
+          if [ -f "$HASH_DIR/ccache.hash.before" ]; then
+            BEFORE_HASH=$(cat "$HASH_DIR/ccache.hash.before")
+          fi
+          AFTER_HASH=$(find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          mkdir -p "$HASH_DIR"
+          echo "$AFTER_HASH" > "$HASH_DIR/ccache.hash.after"
+          if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
+            echo "cache_changed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_changed=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save ccache cache
+        if: always() && steps.ccache.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
         with:
-          name: ccache-dir
           path: ~/.cache/nginx-ech/ccache
+          key: ccache-${{ needs.init.outputs.cache_ts }}
 
   build-openssl-cli:
     needs:
@@ -490,40 +501,3 @@ jobs:
 
           ./opt/nginx-ech/sbin/nginx -p "$PWD" -c conf/nginx.conf -s quit
           wait "$NGINX_PID"
-
-  create-ccache-cache:
-    if: always()
-    needs:
-      - init
-      - build-nginx
-    runs-on: ubuntu-24.04-arm64
-    steps:
-      - name: Download ccache artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ccache-dir
-          path: ~/.cache/nginx-ech/ccache
-      - name: Decide whether to save ccache
-        id: decide
-        run: |
-          set -euxo pipefail
-          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
-          HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"
-          BEFORE_HASH=""
-          if [ -f "$HASH_DIR/ccache.hash.before" ]; then
-            BEFORE_HASH=$(cat "$HASH_DIR/ccache.hash.before")
-          fi
-          AFTER_HASH=$(find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
-          mkdir -p "$HASH_DIR"
-          echo "$AFTER_HASH" > "$HASH_DIR/ccache.hash.after"
-          if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
-            echo "cache_changed=0" >> "$GITHUB_OUTPUT"
-          else
-            echo "cache_changed=1" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Save ccache cache
-        if: steps.decide.outputs.cache_changed == '1'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.cache/nginx-ech/ccache
-          key: ccache-${{ needs.init.outputs.cache_ts }}

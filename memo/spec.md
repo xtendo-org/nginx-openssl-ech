@@ -8,13 +8,9 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 - **Runner**: `ubuntu-24.04-arm64` for native builds and runtime smoke tests (no container).
 - **Outputs**: A tarball containing the install prefix (default `/opt/nginx-ech`) plus a `BUILDINFO.txt`.
 - **Parallel input acquisition**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling.
-- **ccache workflow**:
-  - `restore-ccache-cache` runs before `build-nginx` and only restores the ccache directory.
-  - `create-ccache-cache` runs after `build-nginx`; it computes the before/after tree hash and saves a new cache only if the hash changed.
 - **Parallel builds**:
-  - `build-nginx` depends on `cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`, and `restore-ccache-cache`.
+  - `build-nginx` depends on `cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, and `cache-ngx-brotli`.
   - `build-openssl-cli` depends only on `cache-openssl`.
-  - `create-ccache-cache` runs after `build-nginx` and must be configured to run even if `build-nginx` fails (use `if: always()`).
   - `test-ech` depends on both `build-nginx` and `build-openssl-cli`.
 
 ## Build Inputs (Pinned)
@@ -104,9 +100,12 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
     - If it fails, run `git fetch origin master` and set `CACHE_CHANGED=1`.
 - **ccache**:
   - Cache directory: `~/.cache/nginx-ech/ccache`.
-  - Before the build, record a tree hash of the ccache directory:
-    - `find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$CCACHE_DIR/.ccache.hash.before"`
-  - After the build, compute the tree hash again and compare to the before value. If different, set `CACHE_CHANGED=1` and save a new cache.
+  - In `build-nginx`, restore ccache at the start of the job.
+  - Record the ccache tree hash in a dedicated step before the build:
+    - `HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"`
+    - `find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"`
+  - After the build, compute the tree hash again into `"$HASH_DIR/ccache.hash.after"` and compare to the before value. If different, save a new cache.
+  - The compare/save steps run with `if: always()` so they execute even when the build step fails.
 - **Scope**: ccache is used by the Nginx build only; the OpenSSL CLI build does not use ccache.
 - **Note**: Avoid caching full build directories (fragile); rely on validated sources and `ccache` for speedups.
 
