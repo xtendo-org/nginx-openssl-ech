@@ -85,6 +85,11 @@ def wait_for_run(session: requests.Session) -> WorkflowRun:
                 f"{POLL_ATTEMPTS} attempts."
             )
             raise SystemExit(message)
+        message = (
+            f"Run {run.get('id')} still in progress; sleeping {POLL_SECONDS}s "
+            f"({remaining} attempts remaining)"
+        )
+        print(message)
         time.sleep(POLL_SECONDS)
 
 
