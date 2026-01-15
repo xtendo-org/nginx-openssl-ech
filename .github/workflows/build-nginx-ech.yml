@@ -64,6 +64,7 @@ jobs:
           sudo chown -R root:root /var/cache/apt/archives
           sudo apt-get update
           sudo apt-get install -y --download-only $APT_PACKAGES_ALL
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives
           AFTER_HASH=$(find /var/cache/apt/archives -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
           if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
             echo "cache_changed=0" >> "$GITHUB_OUTPUT"

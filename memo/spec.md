@@ -143,7 +143,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - Before cache restore, `sudo chown -R "$USER:$USER" /var/cache/apt/archives` so the cache action can write; after restore, `sudo chown -R root:root /var/cache/apt/archives` before `apt-get`.
   - Use a union package list across all jobs:
     - `build-essential`, `ca-certificates`, `ccache`, `cmake`, `git`, `ninja-build`, `perl`, `pkg-config`, `binutils`.
-  - In `cache-apt`, compute a hash of `/var/cache/apt/archives` before and after a `sudo apt-get install -y --download-only` for the union list; set `CACHE_CHANGED=1` if the hash changes, and save the cache only then.
+  - In `cache-apt`, compute a hash of `/var/cache/apt/archives` before and after a `sudo apt-get install -y --download-only` for the union list; `sudo chown -R "$USER:$USER" /var/cache/apt/archives` after the download so the hash and cache save can read files. Set `CACHE_CHANGED=1` if the hash changes, and save the cache only then.
 
 ## Smoke Test Strategy (ECH End-to-End)
 ### Overview
