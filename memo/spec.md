@@ -44,6 +44,8 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - `--with-openssl=...` to build OpenSSL ECH in-tree (static libssl/libcrypto).
   - `--add-module=.../ngx_brotli` to compile Brotli support into the binary.
   - `--with-pcre=...` and `--with-zlib=...` from local tarballs.
+  - `--with-http_ssl_module` to enable TLS.
+  - `--with-http_v2_module` to enable HTTP/2.
   - `--with-http_v3_module` to enable HTTP/3 (requires OpenSSL QUIC support on the pinned ECH ref).
   - `--with-http_gzip_static_module` for precompressed assets.
   - `--with-http_stub_status_module` for basic status/health.
