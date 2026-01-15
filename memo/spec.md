@@ -2,7 +2,7 @@
 
 ## Goal
 
-Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support and run an end-to-end ECH smoke test. Produce a release-ready tarball that can be deployed to any arm64 machine that is running a reasonably recent version of Linux and glibc 2.39 or later: For example, Ubuntu 24.04 LTS.
+Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support and run an end-to-end ECH smoke test. Produce a release-ready tarball that can be deployed to any arm64 machine that is running a reasonably recent version of Linux and glibc 2.39 or later, for example, Ubuntu 24.04 LTS.
 
 ## Build Configuration
 
@@ -23,17 +23,13 @@ Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support
   - If `./configure` exists, use it.
   - Otherwise, run `./auto/configure` with the same flags.
 - NGINX OpenSSL source tree:
-  - Copy cached OpenSSL repo into `build/openssl-nginx`.
-  - Reset to the pinned base commit, fetch `master` and `feature/ech`, compute their common ancestor, and cherry-pick the `feature/ech` commits that occur after that ancestor onto the base commit, in order.
-  - Fail the job on any cherry-pick conflict (the patch set must apply cleanly).
-  - Configure NGINX with `--with-openssl=build/openssl-nginx` so it builds against this patched tree.
+  - Use the OpenSSL source tree in `build/openssl-nginx` and configure NGINX with `--with-openssl=build/openssl-nginx` so it builds against that tree.
 - Brotli build step:
   - After `git submodule update --init --recursive`, build the Brotli static libs.
 
 ### OpenSSL CLI (for tests)
 - Build the OpenSSL ECH CLI separately from the NGINX build to avoid configure artifacts clobbering the NGINX build.
-- Source directory: copy the cached OpenSSL repo into `build/openssl-cli`.
-- Merge step: same as the NGINX OpenSSL tree: start from the pinned base commit, fetch `master` and `feature/ech`, find their common ancestor, and cherry-pick the `feature/ech` commits after that ancestor onto the base (in order). Fail on conflicts.
+- Source directory: use the OpenSSL source tree in `build/openssl-cli`.
 - Configure for `linux-aarch64`, install under `test-openssl/` (bin, lib, ssl), skip tests, and package the install tree into `openssl-cli.tar.gz`.
 - Use the CLI at `test-openssl/bin/openssl`, with `LD_LIBRARY_PATH` pointing at `test-openssl/lib`, for all ECH test commands.
 - The `test-ech` job does not install the distro `openssl` package; it uses the built CLI for all certificate and ECH operations.
@@ -58,7 +54,7 @@ Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support
   - Cherry-pick strategy:
     - Compute the common ancestor of `origin/master` and `origin/feature/ech` with `git merge-base`.
     - List commits in `feature/ech` after the common ancestor with `git rev-list --reverse`.
-    - Checkout the base tag commit and cherry-pick the list in order.
+    - Check out the base tag commit and cherry-pick the list in order.
     - Fail the job on any cherry-pick conflict.
 - **Brotli module (ngx_brotli)**:
   - Repo: `https://github.com/google/ngx_brotli.git`
@@ -111,9 +107,10 @@ To allow manual runs (either in the GitHub Actions web UI or via the API), `work
   - If the tarball is missing, download it to the normalized filename with `curl -L <url> -o <normalized>`, then set `CACHE_CHANGED=1`.
 - **Git caches (OpenSSL, ngx_brotli)**:
   - Cache directories: `~/.cache/nginx-ech/openssl`, `~/.cache/nginx-ech/ngx_brotli`.
-  - OpenSSL cache validation:
-    - Run `git cat-file -e 7b371d80d959ec9ab4139d09d78e83c090de9779^{commit}` and `git cat-file -e ac3b44faf3bb51592e5d7904168801bc72ae3556^{commit}`.
-    - If either command fails, run `git fetch origin openssl-3.6.0 master feature/ech` and set `CACHE_CHANGED=1`.
+  - OpenSSL cache validation and patching:
+    - Ensure the pinned base and ECH commits exist locally; fetch the required refs if they do not.
+    - If the cached `.ech_patch_state` marker does not match the current pins, reapply the ECH commit range onto the pinned base and update the marker.
+    - Fail the cache job if cherry-picking does not apply cleanly; do not save a partial cache.
   - ngx_brotli cache validation:
     - Run `git cat-file -e a71f9312c2deb28875acc7bacfdd5695a111aa53^{commit}`.
     - If it fails, run `git fetch origin master` and set `CACHE_CHANGED=1`.

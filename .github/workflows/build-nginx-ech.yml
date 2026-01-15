@@ -218,6 +218,7 @@ jobs:
         run: |
           set -euxo pipefail
           CACHE_DIR="$HOME/.cache/nginx-ech/openssl"
+          PATCH_STATE="$CACHE_DIR/.ech_patch_state"
           cache_changed=0
           if [ ! -d "$CACHE_DIR/.git" ]; then
             rm -rf "$CACHE_DIR"
@@ -225,16 +226,25 @@ jobs:
             cache_changed=1
           fi
           cd "$CACHE_DIR"
-          if ! git cat-file -e "$OPENSSL_BASE_COMMIT^{commit}"; then
-            git fetch origin "$OPENSSL_BASE_TAG"
-            cache_changed=1
+          git fetch origin "$OPENSSL_BASE_TAG" "$OPENSSL_MASTER_REF" "$OPENSSL_ECH_REF"
+          git cat-file -e "$OPENSSL_BASE_COMMIT^{commit}"
+          git cat-file -e "$OPENSSL_ECH_COMMIT^{commit}"
+
+          DESIRED_STATE="${OPENSSL_BASE_COMMIT}:${OPENSSL_ECH_COMMIT}"
+          CURRENT_STATE=""
+          if [ -f "$PATCH_STATE" ]; then
+            CURRENT_STATE=$(cat "$PATCH_STATE")
           fi
-          if ! git cat-file -e "$OPENSSL_ECH_COMMIT^{commit}"; then
-            git fetch origin "$OPENSSL_ECH_REF"
-            cache_changed=1
-          fi
-          if ! git rev-parse --verify "origin/$OPENSSL_MASTER_REF" >/dev/null 2>&1; then
-            git fetch origin "$OPENSSL_MASTER_REF"
+          if [ "$CURRENT_STATE" != "$DESIRED_STATE" ]; then
+            git checkout "$OPENSSL_BASE_COMMIT"
+            BASE_COMMIT=$(git merge-base "origin/$OPENSSL_MASTER_REF" "origin/$OPENSSL_ECH_REF")
+            COMMITS=$(git rev-list --reverse "$BASE_COMMIT..$OPENSSL_ECH_COMMIT")
+            git config user.name "CI Merge"
+            git config user.email "ci@example.invalid"
+            for c in $COMMITS; do
+              git cherry-pick -X theirs "$c"
+            done
+            echo "$DESIRED_STATE" > "$PATCH_STATE"
             cache_changed=1
           fi
           echo "cache_changed=$cache_changed" >> "$GITHUB_OUTPUT"
@@ -380,16 +390,12 @@ jobs:
           cp -a "$HOME/.cache/nginx-ech/openssl" "$BUILD_ROOT/openssl-nginx"
           cp -a "$HOME/.cache/nginx-ech/ngx_brotli" "$BUILD_ROOT/ngx_brotli"
 
-          cd "$BUILD_ROOT/openssl-nginx"
-          git checkout "$OPENSSL_BASE_COMMIT"
-          git fetch origin "$OPENSSL_MASTER_REF" "$OPENSSL_ECH_REF"
-          BASE_COMMIT=$(git merge-base "origin/$OPENSSL_MASTER_REF" "origin/$OPENSSL_ECH_REF")
-          COMMITS=$(git rev-list --reverse "$BASE_COMMIT..$OPENSSL_ECH_COMMIT")
-          git config user.name "CI Merge"
-          git config user.email "ci@example.invalid"
-          for c in $COMMITS; do
-            git cherry-pick -X theirs "$c"
-          done
+          PATCH_STATE="$BUILD_ROOT/openssl-nginx/.ech_patch_state"
+          EXPECTED_STATE="${OPENSSL_BASE_COMMIT}:${OPENSSL_ECH_COMMIT}"
+          if [ ! -f "$PATCH_STATE" ] || [ "$(cat "$PATCH_STATE")" != "$EXPECTED_STATE" ]; then
+            echo "OpenSSL cache is not patched to the expected state."
+            exit 1
+          fi
 
           cd "$BUILD_ROOT/ngx_brotli"
           git submodule update --init --recursive
@@ -534,16 +540,14 @@ jobs:
           rm -rf "$BUILD_ROOT/openssl-cli"
           cp -a "$HOME/.cache/nginx-ech/openssl" "$BUILD_ROOT/openssl-cli"
 
+          PATCH_STATE="$BUILD_ROOT/openssl-cli/.ech_patch_state"
+          EXPECTED_STATE="${OPENSSL_BASE_COMMIT}:${OPENSSL_ECH_COMMIT}"
+          if [ ! -f "$PATCH_STATE" ] || [ "$(cat "$PATCH_STATE")" != "$EXPECTED_STATE" ]; then
+            echo "OpenSSL cache is not patched to the expected state."
+            exit 1
+          fi
+
           cd "$BUILD_ROOT/openssl-cli"
-          git checkout "$OPENSSL_BASE_COMMIT"
-          git fetch origin "$OPENSSL_MASTER_REF" "$OPENSSL_ECH_REF"
-          BASE_COMMIT=$(git merge-base "origin/$OPENSSL_MASTER_REF" "origin/$OPENSSL_ECH_REF")
-          COMMITS=$(git rev-list --reverse "$BASE_COMMIT..$OPENSSL_ECH_COMMIT")
-          git config user.name "CI Merge"
-          git config user.email "ci@example.invalid"
-          for c in $COMMITS; do
-            git cherry-pick -X theirs "$c"
-          done
 
           ./Configure linux-aarch64 \
             --prefix="$PWD/../../test-openssl" \
