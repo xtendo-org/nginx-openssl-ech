@@ -81,10 +81,16 @@ def list_failed_jobs(session: requests.Session, run_id: int) -> list[str]:
     resp = session.get(url, params={"per_page": 100})
     resp.raise_for_status()
     jobs = resp.json().get("jobs", [])
-    return [job.get("name", "<unnamed>") for job in jobs if job.get("conclusion") == "failure"]
+    return [
+        job.get("name", "<unnamed>")
+        for job in jobs
+        if job.get("conclusion") == "failure"
+    ]
 
 
-def print_summary(run: dict[str, Any], zip_path: Path, out_dir: Path, failed_jobs: list[str]) -> None:
+def print_summary(
+    run: dict[str, Any], zip_path: Path, out_dir: Path, failed_jobs: list[str]
+) -> None:
     print(f"Run ID: {run.get('id')}")
     print(f"Status: {run.get('status')}")
     print(f"Conclusion: {run.get('conclusion')}")
