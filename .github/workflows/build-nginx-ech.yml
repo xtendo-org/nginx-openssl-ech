@@ -641,9 +641,9 @@ jobs:
           fi
       - name: Download nginx artifact (current run)
         if: >-
-          ${{ github.event_name != 'workflow_dispatch' ||
+          ${{ (github.event_name != 'workflow_dispatch' ||
               (github.event.inputs.artifact_run_id == '' &&
-               github.event.inputs.artifact_release_tag == '') &&
+               github.event.inputs.artifact_release_tag == '')) &&
               github.ref != 'refs/heads/ci/test-only' }}
         uses: actions/download-artifact@v4
         with:
@@ -702,9 +702,9 @@ jobs:
           PY
       - name: Download OpenSSL CLI artifact (current run)
         if: >-
-          ${{ github.event_name != 'workflow_dispatch' ||
+          ${{ (github.event_name != 'workflow_dispatch' ||
               (github.event.inputs.artifact_run_id == '' &&
-               github.event.inputs.artifact_release_tag == '') &&
+               github.event.inputs.artifact_release_tag == '')) &&
               github.ref != 'refs/heads/ci/test-only' }}
         uses: actions/download-artifact@v4
         with:
