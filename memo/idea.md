@@ -5,7 +5,7 @@ As of writing this memo (2026-01-03), it is already supported by major web brows
 - Firefox, added in version 118 and enabled in 119 [^1] released on 2023-10-24 [^2]
 - Chromium, since version 117 [^3] marked as stable on 2023-09-12 [^4]
 
-However, [Nginx started its ECH support in 1.29.4](https://blog.nginx.org/blog/nginx-open-source-1-29-3-and-1-29-4), which was released on 2025-12-10 (less than a month ago, as of writing). Plus, it requires a **manual build**, because _OpenSSL's ECH support is still in a feature branch_. Nginx's release note says:
+However, [NGINX started its ECH support in 1.29.4](https://blog.nginx.org/blog/nginx-open-source-1-29-3-and-1-29-4), which was released on 2025-12-10 (less than a month ago, as of writing). Plus, it requires a **manual build**, because _OpenSSL's ECH support is still in a feature branch_. NGINX's release note says:
 
 > ECH is expected to be included in OpenSSL 4.0 (anticipated April 2026)
 
@@ -16,7 +16,7 @@ I wanted to try this out.
 [OhMyECH](https://addons.mozilla.org/en-US/firefox/addon/oh-my-ech/) shows a green padlock when you visit <https://tls-ech.dev>. I'd like to see that on my tiny web server too. The trouble is, my Raspberry Pi server has such a limited computing power, and I fear the build will take too long, especially if I might need to do it repeatedly. The idea is, in GitHub Actions:
 
 - Obtain the source code:
-    - Nginx 1.29.4
+    - NGINX 1.29.4
     - OpenSSL's ECH-support branch
     - Brotli support ([ngx_brotli](https://github.com/google/ngx_brotli))
 - **Merge** OpenSSL's 3.6 release and the ECH feature branch (!)
