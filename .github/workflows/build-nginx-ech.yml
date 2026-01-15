@@ -34,7 +34,7 @@ jobs:
       cache_ts: ${{ steps.ts.outputs.cache_ts }}
     steps:
       - id: ts
-        run: echo "cache_ts=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
+        run: echo "cache_ts=$(date -u --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
   cache-nginx:
     needs: init
