@@ -27,6 +27,10 @@ env:
   NGX_BROTLI_REF: "master"
   NGX_BROTLI_COMMIT: "a71f9312c2deb28875acc7bacfdd5695a111aa53"
   PREFIX: "/opt/nginx-ech"
+  APT_PACKAGES_BUILD_NGINX: "build-essential ca-certificates ccache cmake git ninja-build perl pkg-config"
+  APT_PACKAGES_OPENSSL: "build-essential ca-certificates ccache git perl"
+  APT_PACKAGES_TEST: "binutils"
+  APT_PACKAGES_ALL: "build-essential ca-certificates ccache cmake git ninja-build perl pkg-config binutils"
 
 jobs:
   init:
@@ -36,6 +40,42 @@ jobs:
     steps:
       - id: ts
         run: echo "cache_ts=$(date -u --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
+
+  cache-apt:
+    needs: init
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Prepare apt cache dir
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p /var/cache/apt/archives
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives
+      - name: Restore apt cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ needs.init.outputs.cache_ts }}
+          restore-keys: apt-
+      - name: Populate apt cache
+        id: prep
+        run: |
+          set -euxo pipefail
+          BEFORE_HASH=$(find /var/cache/apt/archives -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          sudo chown -R root:root /var/cache/apt/archives
+          sudo apt-get update
+          sudo apt-get install -y --download-only $APT_PACKAGES_ALL
+          AFTER_HASH=$(find /var/cache/apt/archives -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
+            echo "cache_changed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_changed=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save apt cache
+        if: steps.prep.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ needs.init.outputs.cache_ts }}
 
   cache-nginx:
     needs: init
@@ -210,6 +250,7 @@ jobs:
   build-nginx:
     needs:
       - init
+      - cache-apt
       - cache-nginx
       - cache-pcre2
       - cache-zlib
@@ -219,19 +260,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Prepare apt cache dir
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p /var/cache/apt/archives
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives
+      - name: Restore apt cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ needs.init.outputs.cache_ts }}
+          restore-keys: apt-
       - name: Install build dependencies
         run: |
           set -euxo pipefail
+          sudo chown -R root:root /var/cache/apt/archives
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            ca-certificates \
-            ccache \
-            cmake \
-            git \
-            ninja-build \
-            perl \
-            pkg-config
+          sudo apt-get install -y $APT_PACKAGES_BUILD_NGINX
       - name: Restore build input caches
         uses: actions/cache/restore@v4
         with:
@@ -386,27 +431,53 @@ jobs:
   build-openssl-cli:
     needs:
       - init
+      - cache-apt
       - cache-openssl
     runs-on: ubuntu-24.04-arm
     steps:
+      - name: Prepare apt cache dir
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p /var/cache/apt/archives
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives
+      - name: Restore apt cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ needs.init.outputs.cache_ts }}
+          restore-keys: apt-
       - name: Install build dependencies
         run: |
           set -euxo pipefail
+          sudo chown -R root:root /var/cache/apt/archives
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            ca-certificates \
-            git \
-            perl
+          sudo apt-get install -y $APT_PACKAGES_OPENSSL
       - name: Restore OpenSSL cache
         uses: actions/cache/restore@v4
         with:
           path: ~/.cache/nginx-ech/openssl
           key: openssl-${{ needs.init.outputs.cache_ts }}
           restore-keys: openssl-
+      - name: Restore OpenSSL ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/nginx-ech/ccache-openssl
+          key: ccache-openssl-${{ needs.init.outputs.cache_ts }}
+          restore-keys: ccache-openssl-
+      - name: Record OpenSSL ccache hash (before build)
+        run: |
+          set -euxo pipefail
+          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache-openssl"
+          HASH_DIR="$HOME/.cache/nginx-ech/ccache-openssl-hash"
+          mkdir -p "$CCACHE_DIR" "$HASH_DIR"
+          find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
       - name: Build OpenSSL CLI
         run: |
           set -euxo pipefail
+
+          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache-openssl"
+          export PATH="/usr/lib/ccache:$PATH"
+          export CC="ccache gcc"
 
           BUILD_ROOT="$PWD/build"
           mkdir -p "$BUILD_ROOT"
@@ -436,6 +507,31 @@ jobs:
           tar -C "$ROOT/test-openssl" -czf "$ROOT/openssl-cli.tar.gz" .
           echo "tar_path=$ROOT/openssl-cli.tar.gz" >> "$GITHUB_OUTPUT"
         id: package
+      - name: Decide whether to save OpenSSL ccache
+        if: always()
+        id: ccache
+        run: |
+          set -euxo pipefail
+          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache-openssl"
+          HASH_DIR="$HOME/.cache/nginx-ech/ccache-openssl-hash"
+          BEFORE_HASH=""
+          if [ -f "$HASH_DIR/ccache.hash.before" ]; then
+            BEFORE_HASH=$(cat "$HASH_DIR/ccache.hash.before")
+          fi
+          AFTER_HASH=$(find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          mkdir -p "$HASH_DIR"
+          echo "$AFTER_HASH" > "$HASH_DIR/ccache.hash.after"
+          if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
+            echo "cache_changed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_changed=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save OpenSSL ccache
+        if: always() && steps.ccache.outputs.cache_changed == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/nginx-ech/ccache-openssl
+          key: ccache-openssl-${{ needs.init.outputs.cache_ts }}
       - name: Upload OpenSSL CLI artifact
         uses: actions/upload-artifact@v4
         with:
@@ -444,19 +540,30 @@ jobs:
 
   test-ech:
     needs:
+      - cache-apt
       - build-nginx
       - build-openssl-cli
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Prepare apt cache dir
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p /var/cache/apt/archives
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives
+      - name: Restore apt cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ needs.init.outputs.cache_ts }}
+          restore-keys: apt-
       - name: Install test dependencies
         run: |
           set -euxo pipefail
+          sudo chown -R root:root /var/cache/apt/archives
           sudo apt-get update
-          sudo apt-get install -y \
-            binutils \
-            openssl
+          sudo apt-get install -y $APT_PACKAGES_TEST
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -481,20 +588,19 @@ jobs:
           set -euxo pipefail
           mkdir -p test-certs test-ech logs
 
-          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out test-certs/ca.key
-          openssl req -x509 -new -key test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out test-certs/ca.crt
+          OPENSSL_BIN="$PWD/test-openssl/bin/openssl"
+          export LD_LIBRARY_PATH="$PWD/test-openssl/lib"
+
+          "$OPENSSL_BIN" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out test-certs/ca.key
+          "$OPENSSL_BIN" req -x509 -new -key test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out test-certs/ca.crt
 
           for DOMAIN in outer.example.test this.doesnt.exist whats.going.on bananas.arent.real blue.seaglass; do
             NAME=$(printf "%s" "$DOMAIN" | tr '.' '_')
-            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "test-certs/${NAME}.key"
+            "$OPENSSL_BIN" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "test-certs/${NAME}.key"
             printf 'subjectAltName=DNS:%s\n' "$DOMAIN" > test-certs/san.cnf
-            openssl req -new -key "test-certs/${NAME}.key" -subj "/CN=${DOMAIN}" -out "test-certs/${NAME}.csr"
-            openssl x509 -req -in "test-certs/${NAME}.csr" -CA test-certs/ca.crt -CAkey test-certs/ca.key -CAcreateserial -days 30 -sha256 -extfile test-certs/san.cnf -out "test-certs/${NAME}.crt"
+            "$OPENSSL_BIN" req -new -key "test-certs/${NAME}.key" -subj "/CN=${DOMAIN}" -out "test-certs/${NAME}.csr"
+            "$OPENSSL_BIN" x509 -req -in "test-certs/${NAME}.csr" -CA test-certs/ca.crt -CAkey test-certs/ca.key -CAcreateserial -days 30 -sha256 -extfile test-certs/san.cnf -out "test-certs/${NAME}.crt"
           done
-
-          OPENSSL_BIN="$PWD/test-openssl/bin/openssl"
-          export OPENSSL_BIN
-          export LD_LIBRARY_PATH="$PWD/test-openssl/lib"
 
           "$OPENSSL_BIN" list -commands | grep -i ech
           "$OPENSSL_BIN" help ech

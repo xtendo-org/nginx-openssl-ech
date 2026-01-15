@@ -10,10 +10,11 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - Build and test jobs run on `ubuntu-24.04-arm` for native arm64 builds and runtime smoke tests (no container).
 - **Outputs**: A tarball containing the install prefix (default `/opt/nginx-ech`) plus a `BUILDINFO.txt`.
 - **Parallel input acquisition**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) on `ubuntu-24.04` and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling.
+- **APT cache job**: Add `cache-apt` on `ubuntu-24.04-arm` to populate and cache `/var/cache/apt/archives` for arm64 packages. All build/test jobs depend on `cache-apt` and restore the APT cache before installing packages.
 - **Parallel builds**:
-  - `build-nginx` depends on `cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, and `cache-ngx-brotli`.
-  - `build-openssl-cli` depends only on `cache-openssl`.
-  - `test-ech` depends on both `build-nginx` and `build-openssl-cli`.
+  - `build-nginx` depends on `cache-apt`, `cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, and `cache-ngx-brotli`.
+  - `build-openssl-cli` depends on `cache-apt` and `cache-openssl`.
+  - `test-ech` depends on `cache-apt`, `build-nginx`, and `build-openssl-cli`.
 
 ## Build Inputs (Pinned)
 - **Nginx**: 1.29.4.
@@ -93,6 +94,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 - Use the CLI at `test-openssl/bin/openssl` with `LD_LIBRARY_PATH` set to `test-openssl/lib` for all ECH test commands:
   - `export OPENSSL_BIN="$PWD/test-openssl/bin/openssl"`
   - `export LD_LIBRARY_PATH="$PWD/test-openssl/lib"`
+- The `test-ech` job does not install the distro `openssl` package; it uses the built CLI for all certificate and ECH operations.
 
 ### Static vs Dynamic
 - Static link for OpenSSL and Brotli.
@@ -100,7 +102,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 
 ## Caching
 - **Strategy**: Treat caches as best-effort scratch space with per-input rolling caches. Each input gets its own cache namespace with a timestamp key, and cache creation is conditional on a detected change.
-- **Per-input rolling keys**: Use keys with this pattern: `nginx-<timestamp>`, `pcre2-<timestamp>`, `zlib-<timestamp>`, `openssl-<timestamp>`, `ngx-brotli-<timestamp>`, plus `ccache-<timestamp>`. Always use `restore-keys: <name>-` to load the most recent cache.
+- **Per-input rolling keys**: Use keys with this pattern: `nginx-<timestamp>`, `pcre2-<timestamp>`, `zlib-<timestamp>`, `openssl-<timestamp>`, `ngx-brotli-<timestamp>`, `ccache-<timestamp>`, and `ccache-openssl-<timestamp>`. Always use `restore-keys: <name>-` to load the most recent cache.
   - Define `CACHE_TS=$(date -u +%Y%m%dT%H%M%SZ)` once per workflow run and pass it to all jobs.
   - Each cache job sets `CACHE_CHANGED=1` only if it modifies its cache contents; save the cache only when `CACHE_CHANGED=1`.
 - **Tarball caches (nginx/pcre2/zlib)**:
@@ -119,7 +121,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - ngx_brotli cache validation:
     - Run `git cat-file -e a71f9312c2deb28875acc7bacfdd5695a111aa53^{commit}`.
     - If it fails, run `git fetch origin master` and set `CACHE_CHANGED=1`.
-- **ccache**:
+- **ccache (nginx)**:
   - Cache directory: `~/.cache/nginx-ech/ccache`.
   - In `build-nginx`, restore ccache at the start of the job.
   - Record the ccache tree hash in a dedicated step before the build:
@@ -127,8 +129,21 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
     - `find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"`
   - After the build, compute the tree hash again into `"$HASH_DIR/ccache.hash.after"` and compare to the before value. If different, save a new cache.
   - The compare/save steps run with `if: always()` so they execute even when the build step fails.
-- **Scope**: ccache is used by the Nginx build only; the OpenSSL CLI build does not use ccache.
+- **ccache (openssl-cli)**:
+  - Cache directory: `~/.cache/nginx-ech/ccache-openssl`.
+  - In `build-openssl-cli`, restore ccache at the start of the job.
+  - Record the ccache tree hash before and after the build using the same hashing scheme as Nginx, but store hashes under `~/.cache/nginx-ech/ccache-openssl-hash`.
+  - Save the cache only when the hash changes, with `if: always()` so it runs even if the build step fails.
+- **Scope**: Nginx and OpenSSL CLI use separate ccache directories to avoid cross-contamination.
 - **Note**: Avoid caching full build directories (fragile); rely on validated sources and `ccache` for speedups.
+- **APT packages (arm64)**:
+  - Cache job: `cache-apt` on `ubuntu-24.04-arm`.
+  - Cache directory: `/var/cache/apt/archives`.
+  - Restore the cache before installing packages in `build-nginx`, `build-openssl-cli`, and `test-ech`.
+  - Before cache restore, `sudo chown -R "$USER:$USER" /var/cache/apt/archives` so the cache action can write; after restore, `sudo chown -R root:root /var/cache/apt/archives` before `apt-get`.
+  - Use a union package list across all jobs:
+    - `build-essential`, `ca-certificates`, `ccache`, `cmake`, `git`, `ninja-build`, `perl`, `pkg-config`, `binutils`.
+  - In `cache-apt`, compute a hash of `/var/cache/apt/archives` before and after a `sudo apt-get install -y --download-only` for the union list; set `CACHE_CHANGED=1` if the hash changes, and save the cache only then.
 
 ## Smoke Test Strategy (ECH End-to-End)
 ### Overview
@@ -148,15 +163,15 @@ Domains used:
 - Leaf certs: `outer.example.test`, `this.doesnt.exist`, `whats.going.on`, `bananas.arent.real`, `blue.seaglass`
 - Each leaf uses SANs and a unique `server_name` in Nginx.
 
-Commands used in the workflow (certs, stored under a `test-certs/` directory):
+Commands used in the workflow (certs, stored under a `test-certs/` directory, using the built OpenSSL CLI):
 - CA key and cert:
-  - `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out test-certs/ca.key`
-  - `openssl req -x509 -new -key test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out test-certs/ca.crt`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out test-certs/ca.key`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN req -x509 -new -key test-certs/ca.key -sha256 -days 30 -subj "/CN=Test CA" -out test-certs/ca.crt`
 - Leaf certs (loop per domain in the list above, with `NAME` derived by replacing dots with underscores):
-  - `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "test-certs/${NAME}.key"`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "test-certs/${NAME}.key"`
   - `printf 'subjectAltName=DNS:%s\n' "$DOMAIN" > test-certs/san.cnf`
-  - `openssl req -new -key "test-certs/${NAME}.key" -subj "/CN=${DOMAIN}" -out "test-certs/${NAME}.csr"`
-  - `openssl x509 -req -in "test-certs/${NAME}.csr" -CA test-certs/ca.crt -CAkey test-certs/ca.key -CAcreateserial -days 30 -sha256 -extfile test-certs/san.cnf -out "test-certs/${NAME}.crt"`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN req -new -key "test-certs/${NAME}.key" -subj "/CN=${DOMAIN}" -out "test-certs/${NAME}.csr"`
+  - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN x509 -req -in "test-certs/${NAME}.csr" -CA test-certs/ca.crt -CAkey test-certs/ca.key -CAcreateserial -days 30 -sha256 -extfile test-certs/san.cnf -out "test-certs/${NAME}.crt"`
 
 ### ECH Config
 - Use the OpenSSL ECH branch tooling to generate:
