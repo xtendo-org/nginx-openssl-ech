@@ -1,7 +1,9 @@
+import argparse
 import os
 import time
 import zipfile
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -10,6 +12,8 @@ import requests
 OWNER = "xtendo-org"
 REPO = "nginx-openssl-ech"
 API_BASE = "https://api.github.com"
+WORKFLOW_FILE = "build-nginx-ech.yml"
+DEFAULT_REF = "main"
 
 POLL_SECONDS = 30
 POLL_ATTEMPTS = 20
@@ -35,6 +39,13 @@ class Job(TypedDict):
 
 class JobsResponse(TypedDict):
     jobs: list[Job]
+
+
+@dataclass(frozen=True)
+class ParsedArgs:
+    command: str
+    run_id: int | None
+    ref: str
 
 
 def require_token() -> str:
@@ -125,8 +136,70 @@ def list_failed_jobs(session: requests.Session, run_id: int) -> list[str]:
     return [job["name"] for job in jobs if job.get("conclusion") == "failure"]
 
 
+def dispatch_run(session: requests.Session, run_id: int, ref: str) -> None:
+    url = (
+        f"{API_BASE}/repos/{OWNER}/{REPO}/actions/workflows/"
+        f"{WORKFLOW_FILE}/dispatches"
+    )
+    payload = {
+        "ref": ref,
+        "inputs": {
+            "skip_builds": "true",
+            "artifact_run_id": str(run_id),
+        },
+    }
+    resp = session.post(url, json=payload)
+    resp.raise_for_status()
+    print(
+        "Workflow dispatched.",
+        f"ref={ref}",
+        f"artifact_run_id={run_id}",
+    )
+
+
+def parse_args() -> ParsedArgs:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Download logs for the latest run or dispatch a manual run."
+        )
+    )
+    subparsers = parser.add_subparsers(dest="command")
+    logs_parser = subparsers.add_parser(
+        "logs",
+        help="Download logs for the latest workflow run (default).",
+    )
+    logs_parser.set_defaults(command="logs")
+
+    dispatch_parser = subparsers.add_parser(
+        "dispatch",
+        help="Dispatch a workflow run using artifacts from a run ID.",
+    )
+    _ = dispatch_parser.add_argument(
+        "run_id", type=int, help="Run ID that produced artifacts."
+    )
+    _ = dispatch_parser.add_argument(
+        "--ref", default=DEFAULT_REF, help="Git ref to dispatch."
+    )
+
+    args = parser.parse_args()
+    command = cast(str | None, getattr(args, "command", None))
+    if command is None:
+        command = "logs"
+    if command == "dispatch":
+        return ParsedArgs(
+            command=command,
+            run_id=cast(int, args.run_id),
+            ref=cast(str, args.ref),
+        )
+    return ParsedArgs(command=command, run_id=None, ref=DEFAULT_REF)
+
+
 def print_summary(
-    run: WorkflowRun, zip_path: Path, out_dir: Path, failed_jobs: list[str]
+    run: WorkflowRun,
+    zip_path: Path,
+    out_dir: Path,
+    failed_jobs: list[str],
+    downloaded: bool = True,
 ) -> None:
     print(f"Run ID: {run.get('id')}")
     print(f"Status: {run.get('status')}")
@@ -134,8 +207,13 @@ def print_summary(
     print(f"Created at: {run.get('created_at')}")
     print(f"Updated at: {run.get('updated_at')}")
     print(f"URL: {run.get('html_url')}")
-    print(f"Logs ZIP: {zip_path}")
+    if downloaded:
+        print(f"Logs ZIP: {zip_path}")
+    else:
+        print("Logs ZIP: (skipped)")
     print(f"Logs dir: {out_dir}")
+    if not downloaded:
+        print("Logs already exist; skipping download.")
     if run.get("conclusion") == "failure":
         if failed_jobs:
             print("Failed jobs:")
@@ -148,8 +226,22 @@ def print_summary(
 def main() -> None:
     token = require_token()
     session = make_session(token)
+    args = parse_args()
+    if args.command == "dispatch":
+        if args.run_id is None or args.run_id <= 0:
+            raise SystemExit("run_id must be a positive integer.")
+        dispatch_run(session, args.run_id, args.ref)
+        return
     run = wait_for_run(session)
     run_id = run["id"]
+    out_dir = Path("novcs/ci-log") / str(run_id)
+    if out_dir.exists():
+        failed_jobs = []
+        if run.get("conclusion") == "failure":
+            failed_jobs = list_failed_jobs(session, run_id)
+        zip_path = Path(f"/tmp/ci-log-{run_id}.zip")
+        print_summary(run, zip_path, out_dir, failed_jobs, downloaded=False)
+        return
     zip_path, out_dir = download_logs(session, run_id)
     failed_jobs = []
     if run.get("conclusion") == "failure":

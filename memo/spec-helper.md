@@ -17,14 +17,25 @@ This document describes the specification for the Python script that lets us pro
 
 ## Steps to be performed in the helper script
 
-- Use the GitHub API to list workflow runs for the repo.
-- Pick the latest run.
-- If the run is in progress, sleep for 30 seconds and retry, up to 20 attempts (about 10 minutes). If still in progress, exit with a message.
-- Fetch the run logs and save them to local files.
-    - Download the logs ZIP to `/tmp/ci-log-<run-id>.zip`.
-    - Create a directory under `novcs/ci-log`, like `novcs/ci-log/<run-id>`.
-    - Unzip the logs into this directory.
-- Print a summary:
-    - Run ID, conclusion, start/end time, etc.
-    - URL
-    - If the run ended in a failure: list the names of failed jobs (can be multiple).
+- Use CLI modes:
+    - Default (no args) or `logs`: download logs for the latest run.
+    - `dispatch <run-id> [--ref <ref>]`: trigger a `workflow_dispatch` run using artifacts from `run-id`.
+- Logs mode:
+    - Use the GitHub API to list workflow runs for the repo.
+    - Pick the latest run.
+    - If the run is in progress, sleep for 30 seconds and retry, up to 20 attempts (about 10 minutes). If still in progress, exit with a message.
+    - Fetch the run logs and save them to local files.
+        - Download the logs ZIP to `/tmp/ci-log-<run-id>.zip`.
+        - Create a directory under `novcs/ci-log`, like `novcs/ci-log/<run-id>`.
+        - Unzip the logs into this directory.
+    - If `novcs/ci-log/<run-id>` already exists, skip the download and exit after printing the summary.
+    - Print a summary:
+        - Run ID, conclusion, start/end time, etc.
+        - URL
+        - If the run ended in a failure: list the names of failed jobs (can be multiple).
+- Dispatch mode:
+    - Use the GitHub API `workflow_dispatch` endpoint.
+    - Workflow ID: `build-nginx-ech.yml` (file name).
+    - Inputs:
+        - `skip_builds=true`
+        - `artifact_run_id=<run-id>`
