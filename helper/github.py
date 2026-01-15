@@ -69,21 +69,23 @@ def get_latest_run(session: requests.Session) -> WorkflowRun:
 
 
 def wait_for_run(session: requests.Session) -> WorkflowRun:
-    for attempt in range(POLL_ATTEMPTS):
+    if POLL_ATTEMPTS <= 0:
+        raise SystemExit("POLL_ATTEMPTS must be positive.")
+    remaining = POLL_ATTEMPTS
+    while True:
         run = get_latest_run(session)
         status = run.get("status")
-        if status in {"queued", "in_progress"}:
-            if attempt == POLL_ATTEMPTS - 1:
-                run_id = run.get("id")
-                message = (
-                    f"Run {run_id} still in progress after "
-                    f"{POLL_ATTEMPTS} attempts."
-                )
-                raise SystemExit(message)
-            time.sleep(POLL_SECONDS)
-            continue
-        return run
-    raise SystemExit("Polling attempts exhausted.")
+        if status not in {"queued", "in_progress"}:
+            return run
+        remaining -= 1
+        if remaining <= 0:
+            run_id = run.get("id")
+            message = (
+                f"Run {run_id} still in progress after "
+                f"{POLL_ATTEMPTS} attempts."
+            )
+            raise SystemExit(message)
+        time.sleep(POLL_SECONDS)
 
 
 def download_logs(session: requests.Session, run_id: int) -> tuple[Path, Path]:
