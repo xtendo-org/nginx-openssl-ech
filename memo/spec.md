@@ -77,7 +77,7 @@ Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support
   - Build and test jobs run on `ubuntu-24.04-arm` for native arm64 builds and runtime smoke tests.
 - **Outputs**: A tarball containing the install prefix (default `/opt/nginx-ech`) plus a `BUILDINFO.txt`. On `r*` tag pushes, CI uploads the NGINX and OpenSSL CLI tarballs as release assets on that tag.
 - **Parallel acquisition of the sources**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) on `ubuntu-24.04` (x64) and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling. Skip these cache jobs when `skip_builds=true`.
-- **APT cache job**: Add `cache-apt` on `ubuntu-24.04-arm` to populate and cache `/var/cache/apt/archives` for arm64 packages. All build/test jobs depend on `cache-apt` and restore the APT cache before installing packages.
+- **APT cache job**: Add `cache-apt` on `ubuntu-24.04-arm` to populate and cache `/var/cache/apt/archives` and `/var/lib/apt/lists` for arm64 packages. `cache-apt` only runs `apt-get update` when the cached lists are missing or the timestamp in `/var/cache/apt/archives/CACHE-TIMESTAMP.txt` is older than 24 hours. Build/test jobs restore both directories and run `apt-get install` without `apt-get update`.
 - **Parallel builds**:
   - `build-nginx` depends on `cache-apt`, `cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, and `cache-ngx-brotli`.
   - `build-openssl-cli` depends on `cache-apt` and `cache-openssl`.
@@ -135,12 +135,16 @@ To allow manual runs (either in the GitHub Actions web UI or via the API), `work
 - **Note**: Avoid caching full build directories (fragile); rely on validated sources and `ccache` for speedups.
 - **APT packages (arm64)**:
   - Cache job: `cache-apt` on `ubuntu-24.04-arm`.
-  - Cache directory: `/var/cache/apt/archives`.
-  - Restore the cache before installing packages in `build-nginx`, `build-openssl-cli`, and `test-ech`.
-  - Before cache restore, `sudo chown -R "$USER:$USER" /var/cache/apt/archives` so the cache action can write; after restore, `sudo chown -R root:root /var/cache/apt/archives` before `apt-get`.
+  - Cache directories: `/var/cache/apt/archives` and `/var/lib/apt/lists`.
+  - Restore the cache before installing packages in `build-nginx`, `build-openssl-cli`, and `test-ech`. These jobs run `apt-get install` without `apt-get update`.
+  - Before cache restore, `sudo chown -R "$USER:$USER" /var/cache/apt/archives /var/lib/apt/lists` so the cache action can write; after restore, `sudo chown -R root:root /var/cache/apt/archives /var/lib/apt/lists` before `apt-get`.
   - Use a union package list across all jobs:
     - `build-essential`, `ca-certificates`, `ccache`, `cmake`, `git`, `ninja-build`, `perl`, `pkg-config`, `binutils`.
-  - In `cache-apt`, compute a hash of `/var/cache/apt/archives` before and after a `sudo apt-get install -y --download-only` for the union list; `sudo chown -R "$USER:$USER" /var/cache/apt/archives` after the download so the hash and cache save can read files. Set `CACHE_CHANGED=1` if the hash changes, and save the cache only then.
+  - In `cache-apt`, skip `apt-get update` when both of these are true:
+    - `/var/lib/apt/lists` contains entries (not just an empty `partial`/`lock`).
+    - `/var/cache/apt/archives/CACHE-TIMESTAMP.txt` is present and less than 24 hours old.
+  - When an update is required, run `sudo apt-get update`, download the union list with `sudo apt-get install -y --download-only`, and refresh `CACHE-TIMESTAMP.txt` after the update.
+  - Compute a hash over both cache directories before and after updates; set `CACHE_CHANGED=1` only when the hash changes, and save the cache only then.
 
 ## Smoke Test Strategy (ECH End-to-End)
 

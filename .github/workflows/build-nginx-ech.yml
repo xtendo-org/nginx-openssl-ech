@@ -67,24 +67,42 @@ jobs:
       - name: Prepare apt cache dir
         run: |
           set -euxo pipefail
-          sudo mkdir -p /var/cache/apt/archives
-          sudo chown -R "$USER:$USER" /var/cache/apt/archives
+          sudo mkdir -p /var/cache/apt/archives /var/lib/apt/lists/partial
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives /var/lib/apt/lists
       - name: Restore apt cache
         uses: actions/cache/restore@v4
         with:
-          path: /var/cache/apt/archives
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
           key: apt-${{ needs.init.outputs.cache_ts }}
           restore-keys: apt-
       - name: Populate apt cache
         id: prep
         run: |
           set -euxo pipefail
-          BEFORE_HASH=$(find /var/cache/apt/archives -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
-          sudo chown -R root:root /var/cache/apt/archives
+          STAMP_FILE="/var/cache/apt/archives/CACHE-TIMESTAMP.txt"
+          LISTS_DIR="/var/lib/apt/lists"
+          HAS_LISTS=0
+          if find "$LISTS_DIR" -maxdepth 1 -type f ! -name 'lock' -print -quit | grep -q .; then
+            HAS_LISTS=1
+          fi
+          if [ -f "$STAMP_FILE" ] && [ "$HAS_LISTS" -eq 1 ]; then
+            STAMP=$(cat "$STAMP_FILE" || true)
+            STAMP_EPOCH=$(date -u -d "$STAMP" +%s 2>/dev/null || echo 0)
+            NOW=$(date -u +%s)
+            if [ "$STAMP_EPOCH" -gt 0 ] && [ $((NOW - STAMP_EPOCH)) -lt 86400 ]; then
+              echo "cache_changed=0" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          BEFORE_HASH=$(find /var/cache/apt/archives /var/lib/apt/lists -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          sudo chown -R root:root /var/cache/apt/archives /var/lib/apt/lists
           sudo apt-get update
           sudo apt-get install -y --download-only $APT_PACKAGES_ALL
-          sudo chown -R "$USER:$USER" /var/cache/apt/archives
-          AFTER_HASH=$(find /var/cache/apt/archives -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          sudo sh -c 'date -u --iso-8601=seconds > /var/cache/apt/archives/CACHE-TIMESTAMP.txt'
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives /var/lib/apt/lists
+          AFTER_HASH=$(find /var/cache/apt/archives /var/lib/apt/lists -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
           if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
             echo "cache_changed=0" >> "$GITHUB_OUTPUT"
           else
@@ -94,7 +112,9 @@ jobs:
         if: steps.prep.outputs.cache_changed == '1'
         uses: actions/cache/save@v4
         with:
-          path: /var/cache/apt/archives
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
           key: apt-${{ needs.init.outputs.cache_ts }}
 
   cache-nginx:
@@ -311,19 +331,20 @@ jobs:
       - name: Prepare apt cache dir
         run: |
           set -euxo pipefail
-          sudo mkdir -p /var/cache/apt/archives
-          sudo chown -R "$USER:$USER" /var/cache/apt/archives
+          sudo mkdir -p /var/cache/apt/archives /var/lib/apt/lists/partial
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives /var/lib/apt/lists
       - name: Restore apt cache
         uses: actions/cache/restore@v4
         with:
-          path: /var/cache/apt/archives
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
           key: apt-${{ needs.init.outputs.cache_ts }}
           restore-keys: apt-
       - name: Install build dependencies
         run: |
           set -euxo pipefail
-          sudo chown -R root:root /var/cache/apt/archives
-          sudo apt-get update
+          sudo chown -R root:root /var/cache/apt/archives /var/lib/apt/lists
           sudo apt-get install -y $APT_PACKAGES_BUILD_NGINX
       - name: Restore build input caches
         uses: actions/cache/restore@v4
@@ -494,19 +515,20 @@ jobs:
       - name: Prepare apt cache dir
         run: |
           set -euxo pipefail
-          sudo mkdir -p /var/cache/apt/archives
-          sudo chown -R "$USER:$USER" /var/cache/apt/archives
+          sudo mkdir -p /var/cache/apt/archives /var/lib/apt/lists/partial
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives /var/lib/apt/lists
       - name: Restore apt cache
         uses: actions/cache/restore@v4
         with:
-          path: /var/cache/apt/archives
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
           key: apt-${{ needs.init.outputs.cache_ts }}
           restore-keys: apt-
       - name: Install build dependencies
         run: |
           set -euxo pipefail
-          sudo chown -R root:root /var/cache/apt/archives
-          sudo apt-get update
+          sudo chown -R root:root /var/cache/apt/archives /var/lib/apt/lists
           sudo apt-get install -y $APT_PACKAGES_OPENSSL
       - name: Restore OpenSSL cache
         uses: actions/cache/restore@v4
@@ -613,19 +635,20 @@ jobs:
       - name: Prepare apt cache dir
         run: |
           set -euxo pipefail
-          sudo mkdir -p /var/cache/apt/archives
-          sudo chown -R "$USER:$USER" /var/cache/apt/archives
+          sudo mkdir -p /var/cache/apt/archives /var/lib/apt/lists/partial
+          sudo chown -R "$USER:$USER" /var/cache/apt/archives /var/lib/apt/lists
       - name: Restore apt cache
         uses: actions/cache/restore@v4
         with:
-          path: /var/cache/apt/archives
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
           key: apt-${{ needs.init.outputs.cache_ts }}
           restore-keys: apt-
       - name: Install test dependencies
         run: |
           set -euxo pipefail
-          sudo chown -R root:root /var/cache/apt/archives
-          sudo apt-get update
+          sudo chown -R root:root /var/cache/apt/archives /var/lib/apt/lists
           sudo apt-get install -y $APT_PACKAGES_TEST
       - name: Validate artifact source
         if: >-
