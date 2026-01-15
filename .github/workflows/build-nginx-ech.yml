@@ -326,7 +326,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
+          export CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
           export PATH="/usr/lib/ccache:$PATH"
           export CC="ccache gcc"
 
@@ -356,6 +356,9 @@ jobs:
 
           cd "$BUILD_ROOT/ngx_brotli"
           git submodule update --init --recursive
+          cd "$BUILD_ROOT/ngx_brotli/deps/brotli"
+          cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake --build out
 
           cd "$BUILD_ROOT/nginx"
           if [ -x ./configure ]; then
@@ -476,7 +479,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          CCACHE_DIR="$HOME/.cache/nginx-ech/ccache-openssl"
+          export CCACHE_DIR="$HOME/.cache/nginx-ech/ccache-openssl"
           export PATH="/usr/lib/ccache:$PATH"
           export CC="ccache gcc"
 

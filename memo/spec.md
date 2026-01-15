@@ -72,6 +72,11 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
     - `for c in $COMMITS; do git cherry-pick -X theirs "$c"; done`
     - If any cherry-pick exits non-zero, fail the job immediately.
   - Pass `--with-openssl=build/openssl-nginx` to `./configure`.
+- Brotli build step:
+  - After `git submodule update --init --recursive`, build the Brotli static libs:
+    - `cd build/ngx_brotli/deps/brotli`
+    - `cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF`
+    - `cmake --build out`
 
 ### OpenSSL CLI (for tests)
 - Build the OpenSSL ECH CLI separately from the Nginx build to avoid configure artifacts clobbering the Nginx build.
@@ -124,6 +129,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 - **ccache (nginx)**:
   - Cache directory: `~/.cache/nginx-ech/ccache`.
   - In `build-nginx`, restore ccache at the start of the job.
+  - Export `CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"` before invoking any build commands so `ccache` writes to the tracked directory.
   - Record the ccache tree hash in a dedicated step before the build:
     - `HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"`
     - `find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"`
@@ -132,6 +138,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 - **ccache (openssl-cli)**:
   - Cache directory: `~/.cache/nginx-ech/ccache-openssl`.
   - In `build-openssl-cli`, restore ccache at the start of the job.
+  - Export `CCACHE_DIR="$HOME/.cache/nginx-ech/ccache-openssl"` before invoking any build commands so `ccache` writes to the tracked directory.
   - Record the ccache tree hash before and after the build using the same hashing scheme as Nginx, but store hashes under `~/.cache/nginx-ech/ccache-openssl-hash`.
   - Save the cache only when the hash changes, with `if: always()` so it runs even if the build step fails.
 - **Scope**: Nginx and OpenSSL CLI use separate ccache directories to avoid cross-contamination.
