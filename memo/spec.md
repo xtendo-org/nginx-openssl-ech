@@ -55,6 +55,8 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - Copy cached OpenSSL repo into `build/openssl-nginx`.
   - Run the same merge step as the CLI build:
     - `git checkout 7b371d80d959ec9ab4139d09d78e83c090de9779`
+    - `git config user.name "CI Merge"`
+    - `git config user.email "ci@example.invalid"`
     - `git merge --no-ff --no-commit ac3b44faf3bb51592e5d7904168801bc72ae3556`
     - If the merge command exits non-zero, fail the job immediately.
   - Pass `--with-openssl=build/openssl-nginx` to `./configure`.
@@ -64,6 +66,8 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
 - Source directory: copy the cached OpenSSL repo into `build/openssl-cli`.
 - Merge step (performed inside `build/openssl-cli`):
   - `git checkout 7b371d80d959ec9ab4139d09d78e83c090de9779`
+  - `git config user.name "CI Merge"`
+  - `git config user.email "ci@example.invalid"`
   - `git merge --no-ff --no-commit ac3b44faf3bb51592e5d7904168801bc72ae3556`
   - If the merge command exits non-zero, fail the job immediately.
 - Configure and install:

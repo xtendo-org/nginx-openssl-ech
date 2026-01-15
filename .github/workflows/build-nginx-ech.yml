@@ -294,6 +294,8 @@ jobs:
 
           cd "$BUILD_ROOT/openssl-nginx"
           git checkout "$OPENSSL_BASE_COMMIT"
+          git config user.name "CI Merge"
+          git config user.email "ci@example.invalid"
           git merge --no-ff --no-commit "$OPENSSL_ECH_COMMIT"
 
           cd "$BUILD_ROOT/ngx_brotli"
@@ -398,6 +400,8 @@ jobs:
 
           cd "$BUILD_ROOT/openssl-cli"
           git checkout "$OPENSSL_BASE_COMMIT"
+          git config user.name "CI Merge"
+          git config user.email "ci@example.invalid"
           git merge --no-ff --no-commit "$OPENSSL_ECH_COMMIT"
 
           ./Configure linux-aarch64 \
