@@ -1,0 +1,14 @@
+[project]
+name = "nginx-openssl-ech"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "requests>=2.32.5",
+]
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.37.1",
+]

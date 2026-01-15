@@ -19,6 +19,7 @@ I wanted to try this out.
     - Nginx 1.29.4
     - OpenSSL's ECH-support branch
     - Brotli support ([ngx_brotli](https://github.com/google/ngx_brotli))
+- **Merge** OpenSSL's 3.6 release and the ECH feature branch (!)
 - Build, targeting "Linux + arm64". Statically link everything except glibc. Make one single binary executable file.
 - Pick up the binary and add it to this repo as a release asset file
 
