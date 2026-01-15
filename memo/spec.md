@@ -56,6 +56,9 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - `--with-http_slice_module` for large file ranges.
 - Use install prefix `/opt/nginx-ech` and stage with `DESTDIR` into a workspace `dist/` folder before packaging.
 - Build is native (no cross-compile flags).
+- Configure invocation:
+  - If `./configure` exists, use it.
+  - Otherwise, run `./auto/configure` with the same flags.
 - Nginx OpenSSL source tree:
   - Copy cached OpenSSL repo into `build/openssl-nginx`.
   - Run the same cherry-pick step as the CLI build:
@@ -86,6 +89,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - `./Configure linux-aarch64 --prefix="$PWD/../../test-openssl" --openssldir="$PWD/../../test-openssl/ssl" --libdir=lib no-tests`
   - `make -j"$(nproc)"`
   - `make install_sw`
+  - Package to a workspace-root tarball: `tar -C "$GITHUB_WORKSPACE/test-openssl" -czf "$GITHUB_WORKSPACE/openssl-cli.tar.gz" .`
 - Use the CLI at `test-openssl/bin/openssl` with `LD_LIBRARY_PATH` set to `test-openssl/lib` for all ECH test commands:
   - `export OPENSSL_BIN="$PWD/test-openssl/bin/openssl"`
   - `export LD_LIBRARY_PATH="$PWD/test-openssl/lib"`

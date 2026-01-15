@@ -312,7 +312,12 @@ jobs:
           git submodule update --init --recursive
 
           cd "$BUILD_ROOT/nginx"
-          ./configure \
+          if [ -x ./configure ]; then
+            CONFIGURE=./configure
+          else
+            CONFIGURE=./auto/configure
+          fi
+          "$CONFIGURE" \
             --prefix="$PREFIX" \
             --with-http_ssl_module \
             --with-http_v2_module \
@@ -427,8 +432,9 @@ jobs:
           make -j"$(nproc)"
           make install_sw
 
-          tar -C "$PWD/../../test-openssl" -czf "$PWD/../../openssl-cli.tar.gz" .
-          echo "tar_path=$PWD/../../openssl-cli.tar.gz" >> "$GITHUB_OUTPUT"
+          ROOT="$GITHUB_WORKSPACE"
+          tar -C "$ROOT/test-openssl" -czf "$ROOT/openssl-cli.tar.gz" .
+          echo "tar_path=$ROOT/openssl-cli.tar.gz" >> "$GITHUB_OUTPUT"
         id: package
       - name: Upload OpenSSL CLI artifact
         uses: actions/upload-artifact@v4
