@@ -2,11 +2,12 @@
 
 ## Goal
 
-Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support and run an end-to-end ECH smoke test. Produce a release-ready tarball that can be deployed to any arm64 machine that is running a reasonably recent version of Linux and glibc 2.39 or later, for example, Ubuntu 24.04 LTS.
+Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support and run an end-to-end ECH smoke test. Produce a release-ready tarball that can be deployed to any arm64 machine that is running a reasonably recent version of Linux and glibc 2.39 or later. (For example, Ubuntu 24.04 LTS.)
 
 ## Build Configuration
 
 ### NGINX
+
 - Build NGINX from source with:
   - `--with-openssl=...` to build OpenSSL ECH in-tree (static libssl/libcrypto).
   - `--add-module=.../ngx_brotli` for built-in Brotli support.
@@ -23,13 +24,14 @@ Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support
   - If `./configure` exists, use it.
   - Otherwise, run `./auto/configure` with the same flags.
 - NGINX OpenSSL source tree:
-  - Use the OpenSSL source tree in `build/openssl-nginx` and configure NGINX with `--with-openssl=build/openssl-nginx` so it builds against that tree.
+  - Populate `build/openssl-nginx` by copying the OpenSSL source tree provided by the cache job, then configure NGINX with `--with-openssl=build/openssl-nginx` so it builds against that tree.
 - Brotli build step:
   - After `git submodule update --init --recursive`, build the Brotli static libs.
 
 ### OpenSSL CLI (for tests)
+
 - Build the OpenSSL ECH CLI separately from the NGINX build to avoid configure artifacts clobbering the NGINX build.
-- Source directory: use the OpenSSL source tree in `build/openssl-cli`.
+- Source directory: populate `build/openssl-cli` by copying the OpenSSL source tree provided by the cache job, then build from that directory.
 - Configure for `linux-aarch64`, install under `test-openssl/` (bin, lib, ssl), skip tests, and package the install tree into `openssl-cli.tar.gz`.
 - Use the CLI at `test-openssl/bin/openssl`, with `LD_LIBRARY_PATH` pointing at `test-openssl/lib`, for all ECH test commands.
 - The `test-ech` job does not install the distro `openssl` package; it uses the built CLI for all certificate and ECH operations.
@@ -178,6 +180,7 @@ Files:
 - Keep a PEM bundle (`echconfig.pem`) for the server to load via `ssl_ech_file`.
 
 ### NGINX Test Config
+
 - Use the repo file `conf/nginx.conf` (static file, no templating).
 - The `http` block sets shared defaults:
   - `ssl_protocols TLSv1.3;`
