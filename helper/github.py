@@ -1,6 +1,5 @@
 import argparse
 import os
-import sys
 import time
 import zipfile
 from collections.abc import Iterable
@@ -25,6 +24,7 @@ class WorkflowRun(TypedDict):
     id: int
     status: str
     conclusion: str | None
+    head_branch: str | None
     created_at: str
     updated_at: str
     html_url: str
@@ -322,6 +322,8 @@ def print_summary(
     downloaded: bool = True,
 ) -> None:
     print(f"Run ID: {run.get('id')}")
+    ref = run.get("head_branch") or "(unknown)"
+    print(f"Ref: {ref}")
     print(f"Status: {run.get('status')}")
     print(f"Conclusion: {run.get('conclusion')}")
     print(f"Created at: {run.get('created_at')}")
