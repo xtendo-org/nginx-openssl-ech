@@ -65,7 +65,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
     - `COMMITS=$(git rev-list --reverse "$BASE_COMMIT..ac3b44faf3bb51592e5d7904168801bc72ae3556")`
     - `git config user.name "CI Merge"`
     - `git config user.email "ci@example.invalid"`
-    - `for c in $COMMITS; do git cherry-pick "$c"; done`
+    - `for c in $COMMITS; do git cherry-pick -X theirs "$c"; done`
     - If any cherry-pick exits non-zero, fail the job immediately.
   - Pass `--with-openssl=build/openssl-nginx` to `./configure`.
 
@@ -79,7 +79,7 @@ Build an arm64 Nginx binary with OpenSSL ECH and built-in Brotli (static modules
   - `COMMITS=$(git rev-list --reverse "$BASE_COMMIT..ac3b44faf3bb51592e5d7904168801bc72ae3556")`
   - `git config user.name "CI Merge"`
   - `git config user.email "ci@example.invalid"`
-  - `for c in $COMMITS; do git cherry-pick "$c"; done`
+  - `for c in $COMMITS; do git cherry-pick -X theirs "$c"; done`
   - If any cherry-pick exits non-zero, fail the job immediately.
 - Configure and install:
   - `cd build/openssl-cli`
