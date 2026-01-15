@@ -203,9 +203,9 @@ Commands used in the workflow (certs, stored under a `test-certs/` directory, us
     - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN help ech`
   - Produce a PEM bundle with the ECH key and config:
     - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN ech -public_name outer.example.test -out test-ech/echconfig.pem`
-  - Extract the ECH private key and base64 config list:
-    - `awk 'BEGIN{in_block=0} /BEGIN PRIVATE KEY/{in_block=1} in_block{print} /END PRIVATE KEY/{in_block=0}' test-ech/echconfig.pem > test-ech/ech.key`
+  - Extract the ECHConfigList for the client:
     - `awk 'BEGIN{in_block=0} /BEGIN ECH/{in_block=1; next} /END ECH/{in_block=0} in_block{print}' test-ech/echconfig.pem | tr -d '\n' > test-ech/echconfig.b64`
+    - `base64 -d test-ech/echconfig.b64 > test-ech/echconfig.bin`
 
 ### Nginx Test Config
 - Use the repo file `conf/nginx.conf` (static file, no templating).
@@ -214,12 +214,11 @@ Commands used in the workflow (certs, stored under a `test-certs/` directory, us
   - `add_header Alt-Svc 'h3=":8443"; ma=86400';`
   - `add_header QUIC-Status $http3;`
 - Each `server` block includes `snippets/server_defaults.conf` for shared server directives:
-  - `listen 127.0.0.1:8443 ssl http2;`
+  - `listen 127.0.0.1:8443 ssl;`
   - `listen 127.0.0.1:8443 quic reuseport;`
+  - `http2 on;`
   - `http3 on;`
-  - `ssl_ech on;`
-  - `ssl_ech_config test-ech/echconfig.b64;`
-  - `ssl_ech_key test-ech/ech.key;`
+  - `ssl_ech_file test-ech/echconfig.pem;`
 - Each `server` block defines a unique `server_name`, leaf cert/key pair, and a unique response body.
 - All certificate and ECH file paths are relative (`test-certs/...`, `test-ech/...`), so tests must launch Nginx with the workspace as the prefix:
   - `nginx -p "$PWD" -c conf/nginx.conf -g 'daemon off;'`
