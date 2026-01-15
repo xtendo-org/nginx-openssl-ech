@@ -11,4 +11,5 @@ dependencies = [
 [dependency-groups]
 dev = [
     "basedpyright>=1.37.1",
+    "types-requests>=2.32.4.20260107",
 ]

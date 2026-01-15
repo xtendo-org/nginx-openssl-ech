@@ -1,8 +1,9 @@
 import os
 import time
 import zipfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import TypedDict, cast
 
 import requests
 
@@ -12,6 +13,28 @@ API_BASE = "https://api.github.com"
 
 POLL_SECONDS = 30
 POLL_ATTEMPTS = 20
+
+
+class WorkflowRun(TypedDict):
+    id: int
+    status: str
+    conclusion: str | None
+    created_at: str
+    updated_at: str
+    html_url: str
+
+
+class WorkflowRunsResponse(TypedDict):
+    workflow_runs: list[WorkflowRun]
+
+
+class Job(TypedDict):
+    name: str
+    conclusion: str | None
+
+
+class JobsResponse(TypedDict):
+    jobs: list[Job]
 
 
 def require_token() -> str:
@@ -34,25 +57,29 @@ def make_session(token: str) -> requests.Session:
     return session
 
 
-def get_latest_run(session: requests.Session) -> dict[str, Any]:
+def get_latest_run(session: requests.Session) -> WorkflowRun:
     url = f"{API_BASE}/repos/{OWNER}/{REPO}/actions/runs"
     resp = session.get(url, params={"per_page": 1})
     resp.raise_for_status()
-    runs = resp.json().get("workflow_runs", [])
+    data = cast(WorkflowRunsResponse, resp.json())
+    runs = data["workflow_runs"]
     if not runs:
         raise SystemExit("No workflow runs found.")
     return runs[0]
 
 
-def wait_for_run(session: requests.Session) -> dict[str, Any]:
+def wait_for_run(session: requests.Session) -> WorkflowRun:
     for attempt in range(POLL_ATTEMPTS):
         run = get_latest_run(session)
         status = run.get("status")
         if status in {"queued", "in_progress"}:
             if attempt == POLL_ATTEMPTS - 1:
-                raise SystemExit(
-                    f"Run {run.get('id')} still in progress after {POLL_ATTEMPTS} attempts."
+                run_id = run.get("id")
+                message = (
+                    f"Run {run_id} still in progress after "
+                    f"{POLL_ATTEMPTS} attempts."
                 )
+                raise SystemExit(message)
             time.sleep(POLL_SECONDS)
             continue
         return run
@@ -62,12 +89,18 @@ def wait_for_run(session: requests.Session) -> dict[str, Any]:
 def download_logs(session: requests.Session, run_id: int) -> tuple[Path, Path]:
     zip_path = Path(f"/tmp/ci-log-{run_id}.zip")
     url = f"{API_BASE}/repos/{OWNER}/{REPO}/actions/runs/{run_id}/logs"
-    with session.get(url, stream=True) as resp:
+    resp = session.get(url, stream=True)
+    try:
         resp.raise_for_status()
         with zip_path.open("wb") as handle:
-            for chunk in resp.iter_content(chunk_size=1024 * 1024):
+            chunks = cast(
+                Iterable[bytes], resp.iter_content(chunk_size=1024 * 1024)
+            )
+            for chunk in chunks:
                 if chunk:
-                    handle.write(chunk)
+                    _ = handle.write(chunk)
+    finally:
+        resp.close()
 
     out_dir = Path("novcs/ci-log") / str(run_id)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -80,16 +113,13 @@ def list_failed_jobs(session: requests.Session, run_id: int) -> list[str]:
     url = f"{API_BASE}/repos/{OWNER}/{REPO}/actions/runs/{run_id}/jobs"
     resp = session.get(url, params={"per_page": 100})
     resp.raise_for_status()
-    jobs = resp.json().get("jobs", [])
-    return [
-        job.get("name", "<unnamed>")
-        for job in jobs
-        if job.get("conclusion") == "failure"
-    ]
+    data = cast(JobsResponse, resp.json())
+    jobs = data["jobs"]
+    return [job["name"] for job in jobs if job.get("conclusion") == "failure"]
 
 
 def print_summary(
-    run: dict[str, Any], zip_path: Path, out_dir: Path, failed_jobs: list[str]
+    run: WorkflowRun, zip_path: Path, out_dir: Path, failed_jobs: list[str]
 ) -> None:
     print(f"Run ID: {run.get('id')}")
     print(f"Status: {run.get('status')}")
@@ -112,7 +142,7 @@ def main() -> None:
     token = require_token()
     session = make_session(token)
     run = wait_for_run(session)
-    run_id = int(run["id"])
+    run_id = run["id"]
     zip_path, out_dir = download_logs(session, run_id)
     failed_jobs = []
     if run.get("conclusion") == "failure":

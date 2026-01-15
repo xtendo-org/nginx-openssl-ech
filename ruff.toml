@@ -1,0 +1,27 @@
+exclude = [
+    "typings/*",
+    "*_pb2.py",
+    "*.pyi",
+    "*_gen.py",
+    ".venv/*",
+]
+line-length = 80
+
+[lint]
+preview = true
+ignore = [
+    "C901",
+    "F407",
+    "F841",
+]
+select = [
+    "C90",
+    "E",
+    "F",
+    "Q0",
+    "W",
+    "I",
+]
+
+[lint.isort]
+split-on-trailing-comma = false
