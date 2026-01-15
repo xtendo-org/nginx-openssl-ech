@@ -204,8 +204,8 @@ Commands used in the workflow (certs, stored under a `test-certs/` directory, us
   - Produce a PEM bundle with the ECH key and config:
     - `LD_LIBRARY_PATH="$PWD/test-openssl/lib" $OPENSSL_BIN ech -public_name outer.example.test -out test-ech/echconfig.pem`
   - Extract the ECH private key and base64 config list:
-    - `awk 'BEGIN{in=0} /BEGIN PRIVATE KEY/{in=1} in{print} /END PRIVATE KEY/{in=0}' test-ech/echconfig.pem > test-ech/ech.key`
-    - `awk 'BEGIN{in=0} /BEGIN ECH/{in=1; next} /END ECH/{in=0} in{print}' test-ech/echconfig.pem | tr -d '\n' > test-ech/echconfig.b64`
+    - `awk 'BEGIN{in_block=0} /BEGIN PRIVATE KEY/{in_block=1} in_block{print} /END PRIVATE KEY/{in_block=0}' test-ech/echconfig.pem > test-ech/ech.key`
+    - `awk 'BEGIN{in_block=0} /BEGIN ECH/{in_block=1; next} /END ECH/{in_block=0} in_block{print}' test-ech/echconfig.pem | tr -d '\n' > test-ech/echconfig.b64`
 
 ### Nginx Test Config
 - Use the repo file `conf/nginx.conf` (static file, no templating).
