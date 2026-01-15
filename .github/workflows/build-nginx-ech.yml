@@ -849,7 +849,7 @@ jobs:
                 -CAfile "$CERT_DIR/ca.crt" \
                 -ech_config_list "$ECH_CONFIG_LIST" \
                 -ech_outer_sni outer.example.test \
-                -msg \
+                -trace \
                 -quiet \
                 >"$RESPONSE_RAW" 2>"$TRACE_LOG"
 
