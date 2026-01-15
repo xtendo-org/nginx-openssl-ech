@@ -824,6 +824,7 @@ jobs:
           OPENSSL_BIN="$PWD/test-openssl/bin/openssl"
           CERT_DIR="$PWD/conf/test-certs"
           ECH_DIR="$PWD/conf/test-ech"
+          ECH_CONFIG_LIST="$(cat "$ECH_DIR/echconfig.b64")"
           export LD_LIBRARY_PATH="$PWD/test-openssl/lib"
 
           "$OPENSSL_BIN" s_client -help
@@ -840,7 +841,7 @@ jobs:
                   -connect 127.0.0.1:8443 \
                   -servername "$DOMAIN" \
                   -CAfile "$CERT_DIR/ca.crt" \
-                  -ech_config "$ECH_DIR/echconfig.bin" \
+                  -ech_config_list "$ECH_CONFIG_LIST" \
                   -quiet
             )
             echo "$RESPONSE" | grep -q "$DOMAIN"
