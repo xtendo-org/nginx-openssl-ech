@@ -215,7 +215,7 @@ Commands used in the workflow (certs, stored under a `test-certs/` directory, us
   - `add_header QUIC-Status $http3;`
 - Each `server` block includes `snippets/server_defaults.conf` for shared server directives:
   - `listen 127.0.0.1:8443 ssl;`
-  - `listen 127.0.0.1:8443 quic reuseport;`
+  - `listen 127.0.0.1:8443 quic;`
   - `http2 on;`
   - `http3 on;`
   - `ssl_ech_file test-ech/echconfig.pem;`
