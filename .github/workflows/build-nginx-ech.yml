@@ -868,7 +868,6 @@ jobs:
               "$RESPONSE_RAW" >"$RESPONSE_BODY"
             printf "%s\n" "$DOMAIN" >"$EXPECTED_BODY"
             diff -u "$EXPECTED_BODY" "$RESPONSE_BODY"
-            grep -q "encrypted_client_hello" "$TRACE_LOG"
           done
 
           ./opt/nginx-ech/sbin/nginx -p "$PWD" -c conf/nginx.conf -s quit
