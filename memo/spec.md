@@ -120,9 +120,7 @@ To allow manual runs (either in the GitHub Actions web UI or via the API), `work
   - Cache directory: `~/.cache/nginx-ech/ccache`.
   - In `build-nginx`, restore ccache at the start of the job.
   - Export `CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"` before invoking any build commands so `ccache` writes to the tracked directory.
-  - Record the ccache tree hash in a dedicated step before the build:
-    - `HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"`
-    - `find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"`
+  - Record the ccache tree hash in a dedicated step before the build, writing to `"$HASH_DIR/ccache.hash.before"`
   - After the build, compute the tree hash again into `"$HASH_DIR/ccache.hash.after"` and compare to the before value. If different, save a new cache.
   - The compare/save steps run with `if: always()` so they execute even when the build step fails.
 - **ccache (openssl-cli)**:

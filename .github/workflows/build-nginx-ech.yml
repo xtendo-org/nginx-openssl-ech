@@ -388,7 +388,11 @@ jobs:
           CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
           HASH_DIR="$HOME/.cache/nginx-ech/ccache-hash"
           mkdir -p "$CCACHE_DIR" "$HASH_DIR"
-          find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
+          find "$CCACHE_DIR" -type f \
+            ! -name stats \
+            ! -name stats.lock \
+            ! -path "$CCACHE_DIR/tmp/*" \
+            -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
 
       - name: Build nginx and package
         run: |
@@ -487,7 +491,11 @@ jobs:
           if [ -f "$HASH_DIR/ccache.hash.before" ]; then
             BEFORE_HASH=$(cat "$HASH_DIR/ccache.hash.before")
           fi
-          AFTER_HASH=$(find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          AFTER_HASH=$(find "$CCACHE_DIR" -type f \
+            ! -name stats \
+            ! -name stats.lock \
+            ! -path "$CCACHE_DIR/tmp/*" \
+            -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
           mkdir -p "$HASH_DIR"
           echo "$AFTER_HASH" > "$HASH_DIR/ccache.hash.after"
           if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
@@ -548,7 +556,11 @@ jobs:
           CCACHE_DIR="$HOME/.cache/nginx-ech/ccache-openssl"
           HASH_DIR="$HOME/.cache/nginx-ech/ccache-openssl-hash"
           mkdir -p "$CCACHE_DIR" "$HASH_DIR"
-          find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
+          find "$CCACHE_DIR" -type f \
+            ! -name stats \
+            ! -name stats.lock \
+            ! -path "$CCACHE_DIR/tmp/*" \
+            -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
       - name: Build OpenSSL CLI
         run: |
           set -euxo pipefail
@@ -594,7 +606,11 @@ jobs:
           if [ -f "$HASH_DIR/ccache.hash.before" ]; then
             BEFORE_HASH=$(cat "$HASH_DIR/ccache.hash.before")
           fi
-          AFTER_HASH=$(find "$CCACHE_DIR" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
+          AFTER_HASH=$(find "$CCACHE_DIR" -type f \
+            ! -name stats \
+            ! -name stats.lock \
+            ! -path "$CCACHE_DIR/tmp/*" \
+            -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
           mkdir -p "$HASH_DIR"
           echo "$AFTER_HASH" > "$HASH_DIR/ccache.hash.after"
           if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
