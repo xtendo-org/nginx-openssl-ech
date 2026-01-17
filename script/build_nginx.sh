@@ -57,7 +57,6 @@ make install DESTDIR="$DIST_ROOT"
 
 BUILDINFO="$DIST_ROOT$PREFIX/BUILDINFO.txt"
 {
-  echo "built_at=$(date -u +%FT%TZ)"
   echo "nginx_version=$NGINX_VERSION"
   echo "openssl_base_tag=$OPENSSL_BASE_TAG"
   echo "openssl_base_commit=$OPENSSL_BASE_COMMIT"
