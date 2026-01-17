@@ -1,0 +1,9 @@
+Package: @PACKAGE_NAME@
+Version: @VERSION@
+Section: web
+Priority: optional
+Architecture: @ARCH@
+Maintainer: nginx-ech CI <ci@example.invalid>
+Depends: libc6 (>= 2.39)
+Description: NGINX with ECH support (custom build)
+ Built from upstream NGINX with OpenSSL ECH support.

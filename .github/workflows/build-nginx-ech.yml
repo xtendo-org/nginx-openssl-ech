@@ -413,6 +413,25 @@ jobs:
           path: ~/.cache/nginx-ech/ccache
           key: ccache-${{ needs.init.outputs.cache_ts }}
 
+  build-deb:
+    needs:
+      - build-nginx
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download nginx artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nginx-ech-arm64
+      - name: Build deb package
+        run: bash script/build_deb.sh
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-ech-deb
+          path: nginx-ech_*_arm64.deb
+
   build-openssl-cli:
     needs:
       - init
