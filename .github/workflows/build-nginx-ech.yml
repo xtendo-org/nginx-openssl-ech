@@ -395,79 +395,7 @@ jobs:
             -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
 
       - name: Build nginx and package
-        run: |
-          set -euxo pipefail
-
-          export CCACHE_DIR="$HOME/.cache/nginx-ech/ccache"
-          export PATH="/usr/lib/ccache:$PATH"
-          export CC="ccache gcc"
-
-          BUILD_ROOT="$PWD/build"
-          DIST_ROOT="$PWD/dist"
-          mkdir -p "$BUILD_ROOT" "$DIST_ROOT"
-
-          mkdir -p "$BUILD_ROOT/nginx" "$BUILD_ROOT/pcre2" "$BUILD_ROOT/zlib"
-          tar -xf "$HOME/.cache/nginx-ech/nginx/nginx-${NGINX_VERSION}.tar.gz" -C "$BUILD_ROOT/nginx" --strip-components=1
-          tar -xf "$HOME/.cache/nginx-ech/pcre2/pcre2-${PCRE2_VERSION}.tar.gz" -C "$BUILD_ROOT/pcre2" --strip-components=1
-          tar -xf "$HOME/.cache/nginx-ech/zlib/zlib-${ZLIB_VERSION}.tar.gz" -C "$BUILD_ROOT/zlib" --strip-components=1
-
-          rm -rf "$BUILD_ROOT/openssl-nginx" "$BUILD_ROOT/ngx_brotli"
-          cp -a "$HOME/.cache/nginx-ech/openssl" "$BUILD_ROOT/openssl-nginx"
-          cp -a "$HOME/.cache/nginx-ech/ngx_brotli" "$BUILD_ROOT/ngx_brotli"
-
-          PATCH_STATE="$BUILD_ROOT/openssl-nginx/.ech_patch_state"
-          EXPECTED_STATE="${OPENSSL_BASE_COMMIT}:${OPENSSL_ECH_COMMIT}"
-          if [ ! -f "$PATCH_STATE" ] || [ "$(cat "$PATCH_STATE")" != "$EXPECTED_STATE" ]; then
-            echo "OpenSSL cache is not patched to the expected state."
-            exit 1
-          fi
-
-          cd "$BUILD_ROOT/ngx_brotli"
-          git submodule update --init --recursive
-          cd "$BUILD_ROOT/ngx_brotli/deps/brotli"
-          cmake -S . -B out -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
-          cmake --build out
-
-          cd "$BUILD_ROOT/nginx"
-          if [ -x ./configure ]; then
-            CONFIGURE=./configure
-          else
-            CONFIGURE=./auto/configure
-          fi
-          "$CONFIGURE" \
-            --prefix="$PREFIX" \
-            --with-http_ssl_module \
-            --with-http_v2_module \
-            --with-http_v3_module \
-            --with-http_gzip_static_module \
-            --with-http_stub_status_module \
-            --with-http_realip_module \
-            --with-http_slice_module \
-            --with-pcre="$BUILD_ROOT/pcre2" \
-            --with-zlib="$BUILD_ROOT/zlib" \
-            --with-openssl="$BUILD_ROOT/openssl-nginx" \
-            --with-openssl-opt="no-shared no-tests" \
-            --add-module="$BUILD_ROOT/ngx_brotli"
-
-          make -j"$(nproc)"
-          make install DESTDIR="$DIST_ROOT"
-
-          BUILDINFO="$DIST_ROOT$PREFIX/BUILDINFO.txt"
-          {
-            echo "built_at=$(date -u +%FT%TZ)"
-            echo "nginx_version=$NGINX_VERSION"
-            echo "openssl_base_tag=$OPENSSL_BASE_TAG"
-            echo "openssl_base_commit=$OPENSSL_BASE_COMMIT"
-            echo "openssl_ech_ref=$OPENSSL_ECH_REF"
-            echo "openssl_ech_commit=$OPENSSL_ECH_COMMIT"
-            echo "ngx_brotli_commit=$NGX_BROTLI_COMMIT"
-            echo "pcre2_version=$PCRE2_VERSION"
-            echo "zlib_version=$ZLIB_VERSION"
-          } > "$BUILDINFO"
-
-          TAR_NAME="nginx-${NGINX_VERSION}-ech-linux-arm64.tar.gz"
-          tar -C "$DIST_ROOT" -czf "$PWD/$TAR_NAME" .
-          echo "tar_path=$PWD/$TAR_NAME" >> "$GITHUB_OUTPUT"
+        run: bash script/build_nginx.sh
         id: package
       - name: Upload nginx artifact
         uses: actions/upload-artifact@v4
@@ -520,6 +448,8 @@ jobs:
       ${{ github.ref != 'refs/heads/ci/test-only' &&
           (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true') }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Prepare apt cache dir
         run: |
           set -euxo pipefail
@@ -562,38 +492,7 @@ jobs:
             ! -path "$CCACHE_DIR/tmp/*" \
             -print0 | sort -z | xargs -0 -r sha256sum | sha256sum > "$HASH_DIR/ccache.hash.before"
       - name: Build OpenSSL CLI
-        run: |
-          set -euxo pipefail
-
-          export CCACHE_DIR="$HOME/.cache/nginx-ech/ccache-openssl"
-          export PATH="/usr/lib/ccache:$PATH"
-          export CC="ccache gcc"
-
-          BUILD_ROOT="$PWD/build"
-          mkdir -p "$BUILD_ROOT"
-          rm -rf "$BUILD_ROOT/openssl-cli"
-          cp -a "$HOME/.cache/nginx-ech/openssl" "$BUILD_ROOT/openssl-cli"
-
-          PATCH_STATE="$BUILD_ROOT/openssl-cli/.ech_patch_state"
-          EXPECTED_STATE="${OPENSSL_BASE_COMMIT}:${OPENSSL_ECH_COMMIT}"
-          if [ ! -f "$PATCH_STATE" ] || [ "$(cat "$PATCH_STATE")" != "$EXPECTED_STATE" ]; then
-            echo "OpenSSL cache is not patched to the expected state."
-            exit 1
-          fi
-
-          cd "$BUILD_ROOT/openssl-cli"
-
-          ./Configure linux-aarch64 \
-            --prefix="$PWD/../../test-openssl" \
-            --openssldir="$PWD/../../test-openssl/ssl" \
-            --libdir=lib \
-            no-tests
-          make -j"$(nproc)"
-          make install_sw
-
-          ROOT="$GITHUB_WORKSPACE"
-          tar -C "$ROOT/test-openssl" -czf "$ROOT/openssl-cli.tar.gz" .
-          echo "tar_path=$ROOT/openssl-cli.tar.gz" >> "$GITHUB_OUTPUT"
+        run: bash script/build_openssl_cli.sh
         id: package
       - name: Decide whether to save OpenSSL ccache
         if: always()
@@ -707,43 +606,10 @@ jobs:
           OPENSSL_ASSET: openssl-cli.tar.gz
         run: |
           set -euxo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import sys
-          import urllib.request
-
-          def api_get(url: str, accept: str) -> bytes:
-              token = os.environ["GITHUB_TOKEN"]
-              headers = {
-                  "Accept": accept,
-                  "Authorization": f"Bearer {token}",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              }
-              req = urllib.request.Request(url, headers=headers)
-              with urllib.request.urlopen(req) as resp:
-                  return resp.read()
-
-          repo = os.environ["GITHUB_REPOSITORY"]
-          tag = os.environ["RELEASE_TAG"]
-          nginx_asset = os.environ["NGINX_ASSET"]
-          openssl_asset = os.environ["OPENSSL_ASSET"]
-
-          release_url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
-          release = json.loads(api_get(release_url, "application/vnd.github+json"))
-          assets = {asset["name"]: asset["id"] for asset in release.get("assets", [])}
-          required = [nginx_asset, openssl_asset]
-          missing = [name for name in required if name not in assets]
-          if missing:
-              sys.exit(f"Missing release assets: {', '.join(missing)}")
-
-          for name in required:
-              asset_id = assets[name]
-              asset_url = f"https://api.github.com/repos/{repo}/releases/assets/{asset_id}"
-              data = api_get(asset_url, "application/octet-stream")
-              with open(name, "wb") as handle:
-                  handle.write(data)
-          PY
+          python script/download_release_assets.py \
+            --tag "$RELEASE_TAG" \
+            --nginx-asset "$NGINX_ASSET" \
+            --openssl-asset "$OPENSSL_ASSET"
       - name: Download OpenSSL CLI artifact (current run)
         if: >-
           ${{ (github.event_name != 'workflow_dispatch' ||
@@ -767,48 +633,9 @@ jobs:
           OPENSSL_ASSET: openssl-cli.tar.gz
         run: |
           set -euxo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import sys
-          import urllib.request
-
-          def api_get(url: str, accept: str) -> bytes:
-              token = os.environ["GITHUB_TOKEN"]
-              headers = {
-                  "Accept": accept,
-                  "Authorization": f"Bearer {token}",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              }
-              req = urllib.request.Request(url, headers=headers)
-              with urllib.request.urlopen(req) as resp:
-                  return resp.read()
-
-          repo = os.environ["GITHUB_REPOSITORY"]
-          openssl_asset = os.environ["OPENSSL_ASSET"]
-          release_url = f"https://api.github.com/repos/{repo}/releases/latest"
-          release = json.loads(api_get(release_url, "application/vnd.github+json"))
-          assets = {asset["name"]: asset["id"] for asset in release.get("assets", [])}
-          if openssl_asset not in assets:
-              sys.exit(f"Missing release asset: {openssl_asset}")
-
-          nginx_assets = [
-              name for name in assets
-              if name.startswith("nginx-") and name.endswith("-ech-linux-arm64.tar.gz")
-          ]
-          if len(nginx_assets) != 1:
-              sys.exit(
-                  f"Expected exactly one nginx asset, found: {', '.join(nginx_assets)}"
-              )
-
-          required = [nginx_assets[0], openssl_asset]
-          for name in required:
-              asset_id = assets[name]
-              asset_url = f"https://api.github.com/repos/{repo}/releases/assets/{asset_id}"
-              data = api_get(asset_url, "application/octet-stream")
-              with open(name, "wb") as handle:
-                  handle.write(data)
-          PY
+          python script/download_release_assets.py \
+            --latest \
+            --openssl-asset "$OPENSSL_ASSET"
       - name: Extract artifacts
         run: |
           set -euxo pipefail
@@ -820,98 +647,5 @@ jobs:
           set -euxo pipefail
           ldd --version
           readelf --version-info ./opt/nginx-ech/sbin/nginx | grep -o 'GLIBC_[0-9.]*' | sort -u
-      - name: Generate certs and ECH config
-        run: |
-          set -euxo pipefail
-          mkdir -p conf/test-certs conf/test-ech logs
-          ln -sfn conf/test-certs test-certs
-          ln -sfn conf/test-ech test-ech
-
-          OPENSSL_BIN="$PWD/test-openssl/bin/openssl"
-          CERT_DIR="$PWD/conf/test-certs"
-          ECH_DIR="$PWD/conf/test-ech"
-          export LD_LIBRARY_PATH="$PWD/test-openssl/lib"
-          export OPENSSL_CONF="$PWD/test-openssl/ssl/openssl.cnf"
-          mkdir -p "$PWD/test-openssl/ssl"
-          cat > "$OPENSSL_CONF" <<'EOF'
-          openssl_conf = openssl_init
-
-          [openssl_init]
-          providers = provider_sect
-
-          [provider_sect]
-          default = default_sect
-
-          [default_sect]
-          activate = 1
-          EOF
-
-          "$OPENSSL_BIN" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$CERT_DIR/ca.key"
-          "$OPENSSL_BIN" req -x509 -new -key "$CERT_DIR/ca.key" -sha256 -days 30 -subj "/CN=Test CA" -out "$CERT_DIR/ca.crt"
-
-          for DOMAIN in outer.example.test this.doesnt.exist whats.going.on bananas.arent.real blue.seaglass; do
-            NAME=$(printf "%s" "$DOMAIN" | tr '.' '_')
-            "$OPENSSL_BIN" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$CERT_DIR/${NAME}.key"
-            printf 'subjectAltName=DNS:%s\n' "$DOMAIN" > "$CERT_DIR/san.cnf"
-            "$OPENSSL_BIN" req -new -key "$CERT_DIR/${NAME}.key" -subj "/CN=${DOMAIN}" -out "$CERT_DIR/${NAME}.csr"
-            "$OPENSSL_BIN" x509 -req -in "$CERT_DIR/${NAME}.csr" -CA "$CERT_DIR/ca.crt" -CAkey "$CERT_DIR/ca.key" -CAcreateserial -days 30 -sha256 -extfile "$CERT_DIR/san.cnf" -out "$CERT_DIR/${NAME}.crt"
-          done
-
-          "$OPENSSL_BIN" list -commands | grep -i ech
-          "$OPENSSL_BIN" help ech
-          "$OPENSSL_BIN" ech -public_name outer.example.test -out "$ECH_DIR/echconfig.pem"
-          awk 'BEGIN{in_block=0} /BEGIN ECH/{in_block=1; next} /END ECH/{in_block=0} in_block{print}' \
-            "$ECH_DIR/echconfig.pem" | tr -d '\n' > "$ECH_DIR/echconfig.b64"
-          base64 -d "$ECH_DIR/echconfig.b64" > "$ECH_DIR/echconfig.bin"
       - name: Run ECH smoke tests
-        run: |
-          set -euxo pipefail
-          OPENSSL_BIN="$PWD/test-openssl/bin/openssl"
-          CERT_DIR="$PWD/conf/test-certs"
-          ECH_DIR="$PWD/conf/test-ech"
-          ECH_CONFIG_LIST="$(cat "$ECH_DIR/echconfig.b64")"
-          export LD_LIBRARY_PATH="$PWD/test-openssl/lib"
-
-          "$OPENSSL_BIN" s_client -help
-
-          ./opt/nginx-ech/sbin/nginx -p "$PWD" -c conf/nginx.conf -t
-          ./opt/nginx-ech/sbin/nginx -p "$PWD" -c conf/nginx.conf -g 'daemon off;' &
-          NGINX_PID=$!
-          sleep 1
-
-          for DOMAIN in this.doesnt.exist whats.going.on bananas.arent.real blue.seaglass; do
-            RESPONSE_RAW="response-${DOMAIN}.raw"
-            RESPONSE_BODY="response-${DOMAIN}.txt"
-            EXPECTED_BODY="expected-${DOMAIN}.txt"
-            TRACE_LOG="trace-${DOMAIN}.log"
-
-            printf 'GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "$DOMAIN" | \
-              LD_LIBRARY_PATH="$PWD/test-openssl/lib" "$OPENSSL_BIN" s_client \
-                -connect 127.0.0.1:8443 \
-                -servername "$DOMAIN" \
-                -CAfile "$CERT_DIR/ca.crt" \
-                -ech_config_list "$ECH_CONFIG_LIST" \
-                -ech_outer_sni outer.example.test \
-                -trace \
-                -quiet \
-                >"$TRACE_LOG" 2>&1
-            grep -q "encrypted_client_hello" "$TRACE_LOG"
-
-            printf 'GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "$DOMAIN" | \
-              LD_LIBRARY_PATH="$PWD/test-openssl/lib" "$OPENSSL_BIN" s_client \
-                -connect 127.0.0.1:8443 \
-                -servername "$DOMAIN" \
-                -CAfile "$CERT_DIR/ca.crt" \
-                -ech_config_list "$ECH_CONFIG_LIST" \
-                -ech_outer_sni outer.example.test \
-                -quiet \
-                >"$RESPONSE_RAW" 2>"$TRACE_LOG"
-
-            awk 'BEGIN{body=0} /^\r?$/{body=1; next} {if(body) print}' \
-              "$RESPONSE_RAW" >"$RESPONSE_BODY"
-            printf "%s\n" "$DOMAIN" >"$EXPECTED_BODY"
-            diff -u "$EXPECTED_BODY" "$RESPONSE_BODY"
-          done
-
-          ./opt/nginx-ech/sbin/nginx -p "$PWD" -c conf/nginx.conf -s quit
-          wait "$NGINX_PID"
+        run: bash script/test_ech.sh
