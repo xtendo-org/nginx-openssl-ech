@@ -28,5 +28,20 @@ make -j"$(nproc)"
 make install_sw
 
 ROOT="$GITHUB_WORKSPACE"
-tar -C "$ROOT/test-openssl" -czf "$ROOT/openssl-cli.tar.gz" .
-echo "tar_path=$ROOT/openssl-cli.tar.gz" >> "$GITHUB_OUTPUT"
+STAGE_DIR="$ROOT/test-openssl"
+OUT_DIR="$ROOT/test-openssl-artifact"
+rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR/bin" "$OUT_DIR/lib" "$OUT_DIR/lib/ossl-modules" "$OUT_DIR/ssl"
+
+cp -a "$STAGE_DIR/bin/openssl" "$OUT_DIR/bin/"
+cp -a "$STAGE_DIR/lib/libssl.so"* "$OUT_DIR/lib/"
+cp -a "$STAGE_DIR/lib/libcrypto.so"* "$OUT_DIR/lib/"
+if [ -d "$STAGE_DIR/lib/ossl-modules" ]; then
+  cp -a "$STAGE_DIR/lib/ossl-modules/"* "$OUT_DIR/lib/ossl-modules/"
+fi
+if [ -f "$STAGE_DIR/ssl/openssl.cnf" ]; then
+  cp -a "$STAGE_DIR/ssl/openssl.cnf" "$OUT_DIR/ssl/"
+fi
+
+tar -C "$OUT_DIR" -czf "$ROOT/test-openssl-cli.tar.gz" .
+echo "tar_path=$ROOT/test-openssl-cli.tar.gz" >> "$GITHUB_OUTPUT"

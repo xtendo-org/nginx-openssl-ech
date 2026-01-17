@@ -32,7 +32,7 @@ Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support
 
 - Build the OpenSSL ECH CLI separately from the NGINX build to avoid configure artifacts clobbering the NGINX build.
 - Source directory: populate `build/openssl-cli` by copying the OpenSSL source tree provided by the cache job, then build from that directory.
-- Configure for `linux-aarch64`, install under `test-openssl/` (bin, lib, ssl), skip tests, and package the install tree into `openssl-cli.tar.gz`.
+- Configure for `linux-aarch64`, install under `test-openssl/` (bin, lib, ssl), skip tests, and package only the runtime files into `test-openssl-cli.tar.gz`.
 - Use the CLI at `test-openssl/bin/openssl`, with `LD_LIBRARY_PATH` pointing at `test-openssl/lib`, for all ECH test commands.
 - The `test-ech` job does not install the distro `openssl` package; it uses the built CLI for all certificate and ECH operations.
 
@@ -70,28 +70,18 @@ Configure CI to build an arm64 NGINX binary with "Encrypted ClientHello" support
 
 ## CI Strategy
 
-- **Trigger**: GitHub Actions on push to `main`, `develop`, `release`, or `ci/test-only`. Tag pushes matching `r*` also trigger the workflow for release asset uploads. Manual runs use `workflow_dispatch`.
-- **Test-only branch**: `ci/test-only` runs the test job only (does not build) and pulls binaries from the latest non-draft, non-prerelease release.
+- **Trigger**: GitHub Actions on push to `main`, `develop`, or `release`. Tag pushes matching `r*` also trigger the workflow for release asset uploads.
 - **Runner**:
   - Cache jobs run on `ubuntu-24.04` (x86_64) to maximize runner availability.
   - Build and test jobs run on `ubuntu-24.04-arm` for native arm64 builds and runtime smoke tests.
-- **Outputs**: A tarball containing the install prefix (default `/opt/nginx-ech`) plus a `BUILDINFO.txt`. On `r*` tag pushes, CI uploads the NGINX and OpenSSL CLI tarballs as release assets on that tag.
-- **Parallel acquisition of the sources**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) on `ubuntu-24.04` (x64) and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling. Skip these cache jobs when `skip_builds=true`.
+- **Outputs**: A tarball containing the install prefix (default `/opt/nginx-ech`) plus a `BUILDINFO.txt`. On `r*` tag pushes, CI uploads the NGINX tarball as a release asset on that tag.
+- **Parallel acquisition of the sources**: Each build input has its own cache and working directory. Use separate jobs per input (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) on `ubuntu-24.04` (x64) and have build jobs depend only on the caches they need. Each cache job restores, validates, and saves its cache only when `CACHE_CHANGED=1`; build jobs restore their required caches again before compiling.
 - **APT cache job**: Add `cache-apt` on `ubuntu-24.04-arm` to populate and cache `/var/cache/apt/archives` and `/var/lib/apt/lists` for arm64 packages. `cache-apt` only runs `apt-get update` when the cached lists are missing or the timestamp in `/var/cache/apt/archives/CACHE-TIMESTAMP.txt` is older than 24 hours. Build/test jobs restore both directories and run `apt-get install` without `apt-get update`.
 - **Parallel builds**:
   - `build-nginx` depends on `cache-apt`, `cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, and `cache-ngx-brotli`.
   - `build-openssl-cli` depends on `cache-apt` and `cache-openssl`.
   - `test-ech` depends on `cache-apt`, `build-nginx`, and `build-openssl-cli`, but is gated to run only when the build jobs succeeded or were skipped.
 
-### Manual test mode
-
-To allow manual runs (either in the GitHub Actions web UI or via the API), `workflow_dispatch` exposes:
-
-  - `skip_builds` (boolean, default false) to skip build jobs and reuse artifacts.
-  - `artifact_run_id` (string, optional) to download artifacts from a previous run.
-  - `artifact_release_tag` (string, optional) to download artifacts from a release tag.
-  - When `skip_builds=true`, cache jobs (`cache-nginx`, `cache-pcre2`, `cache-zlib`, `cache-openssl`, `cache-ngx-brotli`) and build jobs (`build-nginx`, `build-openssl-cli`) are skipped, and `test-ech` downloads artifacts from either a run ID or a release tag (exactly one).
-  - If `skip_builds=true` and both inputs are empty (or both are set), fail `test-ech` with a clear message.
 
 ## Caching
 

@@ -30,23 +30,8 @@ on:
       - main
       - develop
       - release
-      - ci/test-only
     tags:
       - "r*"
-  workflow_dispatch:
-    inputs:
-      skip_builds:
-        description: "Skip build jobs and use artifacts from another run."
-        type: boolean
-        default: false
-      artifact_run_id:
-        description: "Run ID to download artifacts from (optional)."
-        type: string
-        default: ""
-      artifact_release_tag:
-        description: "Release tag to download artifacts from (optional)."
-        type: string
-        default: ""
 
 permissions:
   contents: write
@@ -128,9 +113,6 @@ jobs:
   cache-nginx:
     needs: init
     runs-on: ubuntu-24.04
-    if: >-
-      ${{ github.ref != 'refs/heads/ci/test-only' &&
-          (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true') }}
     steps:
       - name: Restore nginx cache
         uses: actions/cache/restore@v4
@@ -163,9 +145,6 @@ jobs:
   cache-pcre2:
     needs: init
     runs-on: ubuntu-24.04
-    if: >-
-      ${{ github.ref != 'refs/heads/ci/test-only' &&
-          (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true') }}
     steps:
       - name: Restore PCRE2 cache
         uses: actions/cache/restore@v4
@@ -196,9 +175,6 @@ jobs:
   cache-zlib:
     needs: init
     runs-on: ubuntu-24.04
-    if: >-
-      ${{ github.ref != 'refs/heads/ci/test-only' &&
-          (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true') }}
     steps:
       - name: Restore zlib cache
         uses: actions/cache/restore@v4
@@ -231,9 +207,6 @@ jobs:
   cache-openssl:
     needs: init
     runs-on: ubuntu-24.04
-    if: >-
-      ${{ github.ref != 'refs/heads/ci/test-only' &&
-          (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true') }}
     steps:
       - name: Restore OpenSSL cache
         uses: actions/cache/restore@v4
@@ -286,9 +259,6 @@ jobs:
   cache-ngx-brotli:
     needs: init
     runs-on: ubuntu-24.04
-    if: >-
-      ${{ github.ref != 'refs/heads/ci/test-only' &&
-          (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true') }}
     steps:
       - name: Restore ngx_brotli cache
         uses: actions/cache/restore@v4
@@ -330,9 +300,6 @@ jobs:
       - cache-openssl
       - cache-ngx-brotli
     runs-on: ubuntu-24.04-arm
-    if: >-
-      ${{ github.ref != 'refs/heads/ci/test-only' &&
-          (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -452,9 +419,6 @@ jobs:
       - cache-apt
       - cache-openssl
     runs-on: ubuntu-24.04-arm
-    if: >-
-      ${{ github.ref != 'refs/heads/ci/test-only' &&
-          (github.event_name != 'workflow_dispatch' || github.event.inputs.skip_builds != 'true') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -534,14 +498,8 @@ jobs:
       - name: Upload OpenSSL CLI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openssl-cli
+          name: test-openssl-cli
           path: ${{ steps.package.outputs.tar_path }}
-      - name: Upload OpenSSL release asset
-        if: startsWith(github.ref, 'refs/tags/r')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: ${{ steps.package.outputs.tar_path }}
 
   test-ech:
     needs:
@@ -549,9 +507,6 @@ jobs:
       - build-nginx
       - build-openssl-cli
     runs-on: ubuntu-24.04-arm
-    if: >-
-      ${{ always() && (needs.build-nginx.result == 'success' || needs.build-nginx.result == 'skipped') &&
-          (needs.build-openssl-cli.result == 'success' || needs.build-openssl-cli.result == 'skipped') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -573,83 +528,20 @@ jobs:
           set -euxo pipefail
           sudo chown -R root:root /var/cache/apt/archives /var/lib/apt/lists
           sudo apt-get install -y $APT_PACKAGES_TEST
-      - name: Validate artifact source
-        if: >-
-          ${{ github.event_name == 'workflow_dispatch' &&
-              github.event.inputs.skip_builds == 'true' }}
-        run: |
-          set -euxo pipefail
-          RUN_ID="${{ github.event.inputs.artifact_run_id }}"
-          RELEASE_TAG="${{ github.event.inputs.artifact_release_tag }}"
-          if [ -z "$RUN_ID" ] && [ -z "$RELEASE_TAG" ]; then
-            echo "artifact_run_id or artifact_release_tag is required when skip_builds=true."
-            exit 1
-          fi
-          if [ -n "$RUN_ID" ] && [ -n "$RELEASE_TAG" ]; then
-            echo "Specify only one of artifact_run_id or artifact_release_tag."
-            exit 1
-          fi
-      - name: Download nginx artifact (current run)
-        if: >-
-          ${{ (github.event_name != 'workflow_dispatch' ||
-              (github.event.inputs.artifact_run_id == '' &&
-               github.event.inputs.artifact_release_tag == '')) &&
-              github.ref != 'refs/heads/ci/test-only' }}
+      - name: Download nginx artifact
         uses: actions/download-artifact@v4
         with:
           name: nginx-ech-arm64
-      - name: Download nginx artifact (from run)
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.artifact_run_id != '' }}
+      - name: Download OpenSSL CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: nginx-ech-arm64
-          repository: ${{ github.repository }}
-          run-id: ${{ github.event.inputs.artifact_run_id }}
-      - name: Download artifacts (from release)
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.artifact_release_tag != '' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.inputs.artifact_release_tag }}
-          NGINX_ASSET: nginx-${{ env.NGINX_VERSION }}-ech-linux-arm64.tar.gz
-          OPENSSL_ASSET: openssl-cli.tar.gz
-        run: |
-          set -euxo pipefail
-          python script/download_release_assets.py \
-            --tag "$RELEASE_TAG" \
-            --nginx-asset "$NGINX_ASSET" \
-            --openssl-asset "$OPENSSL_ASSET"
-      - name: Download OpenSSL CLI artifact (current run)
-        if: >-
-          ${{ (github.event_name != 'workflow_dispatch' ||
-              (github.event.inputs.artifact_run_id == '' &&
-               github.event.inputs.artifact_release_tag == '')) &&
-              github.ref != 'refs/heads/ci/test-only' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: openssl-cli
-      - name: Download OpenSSL CLI artifact (from run)
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.artifact_run_id != '' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: openssl-cli
-          repository: ${{ github.repository }}
-          run-id: ${{ github.event.inputs.artifact_run_id }}
-      - name: Download artifacts (from latest release)
-        if: ${{ github.ref == 'refs/heads/ci/test-only' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENSSL_ASSET: openssl-cli.tar.gz
-        run: |
-          set -euxo pipefail
-          python script/download_release_assets.py \
-            --latest \
-            --openssl-asset "$OPENSSL_ASSET"
+          name: test-openssl-cli
       - name: Extract artifacts
         run: |
           set -euxo pipefail
           tar -xzf nginx-*.tar.gz
           mkdir -p test-openssl
-          tar -xzf openssl-cli.tar.gz -C test-openssl
+          tar -xzf test-openssl-cli.tar.gz -C test-openssl
       - name: glibc check
         run: |
           set -euxo pipefail
