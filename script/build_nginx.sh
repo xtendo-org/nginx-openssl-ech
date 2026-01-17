@@ -67,6 +67,16 @@ BUILDINFO="$DIST_ROOT$PREFIX/BUILDINFO.txt"
   echo "zlib_version=$ZLIB_VERSION"
 } > "$BUILDINFO"
 
+LICENSE_DIR="$DIST_ROOT/LICENSES"
+mkdir -p "$LICENSE_DIR"
+
+cp -a "$BUILD_ROOT/nginx/LICENSE" "$LICENSE_DIR/nginx.txt"
+cp -a "$BUILD_ROOT/openssl-nginx/LICENSE.txt" "$LICENSE_DIR/openssl.txt"
+cp -a "$BUILD_ROOT/pcre2/LICENCE.md" "$LICENSE_DIR/pcre2.txt"
+cp -a "$BUILD_ROOT/zlib/LICENSE" "$LICENSE_DIR/zlib.txt"
+cp -a "$BUILD_ROOT/ngx_brotli/LICENSE" "$LICENSE_DIR/ngx_brotli.txt"
+cp -a "$BUILD_ROOT/ngx_brotli/deps/brotli/LICENSE" "$LICENSE_DIR/brotli.txt"
+
 TAR_NAME="nginx-${NGINX_VERSION}-ech-linux-arm64.tar.gz"
 tar -C "$DIST_ROOT" -czf "$PWD/$TAR_NAME" .
 echo "tar_path=$PWD/$TAR_NAME" >> "$GITHUB_OUTPUT"
