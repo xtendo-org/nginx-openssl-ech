@@ -1,4 +1,4 @@
-name: Build nginx ECH (arm64)
+name: Build NGINX with ECH (arm64)
 
 on:
   push:
