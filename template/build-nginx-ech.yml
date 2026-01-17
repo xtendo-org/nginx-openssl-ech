@@ -37,6 +37,14 @@ jobs:
       - id: ts
         run: echo "cache_ts=$(date -u --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
+  check-templates:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify templates
+        run: python script/tpl.py check
+
   cache-apt:
     needs: init
     runs-on: ubuntu-24.04-arm
