@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import argparse
-import re
+import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import panbagi  # pyright: ignore[reportImplicitRelativeImport]
-
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import panbagi  # pyright: ignore[reportImplicitRelativeImport]  # noqa: E402
+
 REPO_ROOT = SCRIPT_DIR.parent
 TEMPLATE_DIR = REPO_ROOT / "template"
 
@@ -21,40 +22,21 @@ ENV_TEMPLATE = TEMPLATE_DIR / "env.yml"
 WORKFLOW_TEMPLATE = TEMPLATE_DIR / "build-nginx-ech.yml"
 README_TEMPLATE = TEMPLATE_DIR / "README.md"
 
-WORKFLOW_OUT = REPO_ROOT / ".github" / "workflows" / "build-nginx-ech.yml"
+WORKFLOW_OUT = REPO_ROOT / ".github/workflows/build-nginx-ech.yml"
 README_OUT = REPO_ROOT / "README.md"
 
-_ENV_LINE_RE = re.compile(
-    r'^\s{2}([A-Za-z_][A-Za-z0-9_]*)\s*:\s*"([^"]*)"\s*(?:#.*)?$'
-)
 
-
-def parse_env_template(path: Path) -> dict[str, str]:
+def gen_env_vars_map(path: Path) -> Iterator[tuple[str, str]]:
     lines = path.read_text().splitlines()
-    env_seen = False
-    vars_map: dict[str, str] = {}
 
-    for idx, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+    for raw_line in lines[1:]:
+        line = raw_line.lstrip()
+        if not line:
             continue
-        if not env_seen:
-            if stripped != "env:":
-                msg = f"Expected 'env:' at {path}:{idx}, found: {line!r}"
-                raise ValueError(msg)
-            env_seen = True
-            continue
-        match = _ENV_LINE_RE.match(line)
-        if not match:
-            msg = f"Invalid env line at {path}:{idx}: {line!r}"
-            raise ValueError(msg)
-        key, value = match.groups()
-        vars_map[key] = value
 
-    if not env_seen:
-        raise ValueError(f"Missing 'env:' header in {path}")
-
-    return vars_map
+        k, sep, v = line.partition(": ")
+        assert sep
+        yield (k, v[1:-1])
 
 
 def render_readme(vars_map: dict[str, str]) -> str:
@@ -74,8 +56,8 @@ def write_outputs(workflow_text: str, readme_text: str) -> None:
     _ = README_OUT.write_text(readme_text)
 
 
-def diff_file(expected: Path, actual: Path) -> int:
-    result = subprocess.run(["diff", "-u", str(expected), str(actual)])
+def diff_file(tool: str, expected: Path, actual: Path) -> int:
+    result = subprocess.run([tool, str(expected), str(actual)])
     return result.returncode
 
 
@@ -87,10 +69,19 @@ def run_check(workflow_text: str, readme_text: str) -> int:
         _ = workflow_tmp.write_text(workflow_text)
         _ = readme_tmp.write_text(readme_text)
 
-        code = diff_file(workflow_tmp, WORKFLOW_OUT)
-        if code != 0:
-            return code
-        return diff_file(readme_tmp, README_OUT)
+        compare_mappings = [
+            (workflow_tmp, WORKFLOW_OUT),
+            (readme_tmp, README_OUT),
+        ]
+
+        tool = os.getenv("DIFF_TOOL", "diff")
+
+        for expected, actual in compare_mappings:
+            code = diff_file(tool, expected, actual)
+            if code != 0:
+                return code
+
+        return 0
 
 
 @dataclass(frozen=True)
@@ -113,7 +104,7 @@ def parse_args() -> CliArgs:
 
 def main() -> int:
     args = parse_args()
-    vars_map = parse_env_template(ENV_TEMPLATE)
+    vars_map = dict(gen_env_vars_map(ENV_TEMPLATE))
     readme_text = render_readme(vars_map)
     workflow_text = render_workflow()
 

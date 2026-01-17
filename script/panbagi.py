@@ -29,7 +29,7 @@ def _construct_template(tpl_str: str) -> Iterator[Fragment]:
         yield Fragment(FragmentType.Var, var_name)
         cursor = matched.end()
 
-    if (last_piece := tpl_str[cursor:]):
+    if last_piece := tpl_str[cursor:]:
         yield Fragment(FragmentType.Str, last_piece)
 
 
