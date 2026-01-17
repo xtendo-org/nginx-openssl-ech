@@ -1,3 +1,9 @@
+# nginx-openssl-ech
+
+This project builds NGINX that supports ECH for linux-arm64.
+
+## Why
+
 [Encrypted Client Hello](https://datatracker.ietf.org/doc/draft-ietf-tls-esni/) is a nice step forward, for privacy and security of the Internet.
 
 As of writing this memo (2026-01-03), it is already supported by major web browsers like:
@@ -15,15 +21,20 @@ I wanted to try this out.
 
 [OhMyECH](https://addons.mozilla.org/en-US/firefox/addon/oh-my-ech/) shows a green padlock when you visit <https://tls-ech.dev>. I'd like to see that on my tiny web server too. The trouble is, my Raspberry Pi server has such a limited computing power, and I fear the build will take too long, especially if I might need to do it repeatedly. The idea is, in GitHub Actions:
 
-- Obtain the source code:
-    - NGINX 1.29.4
-    - OpenSSL's ECH-support branch
-    - Brotli support ([ngx_brotli](https://github.com/google/ngx_brotli))
-- **Merge** OpenSSL's 3.6 release and the ECH feature branch (!)
-- Build, targeting "Linux + arm64". Statically link everything except glibc. Make one single binary executable file.
-- Pick up the binary and add it to this repo as a release asset file
+- Obtain the source code
+- Prepare a version of OpenSSL 3.6 (release version) **plus** the ECH feature branch (!)
+- Build, targeting "Linux + arm64". Statically link everything except glibc. Make a binary executable file.
+- Pick up the result and add it to this repo as a release asset.
 
-Privacy and security right now!
+## Version
+
+Currently uses:
+
+- NGINX: {{NGINX_VERSION}}
+- PCRE2: {{PCRE2_VERSION}}
+- zlib: {{ZLIB_VERSION}}
+- ngx_brotli: commit `{{NGX_BROTLI_COMMIT}}`
+- OpenSSL: Use the tag `{{OPENSSL_BASE_TAG}}`, then cherry-pick the relevant commits from `{{OPENSSL_ECH_REF}}`
 
 [^1]: https://support.mozilla.org/en-US/kb/understand-encrypted-client-hello
 [^2]: https://www.firefox.com/en-US/firefox/119.0/releasenotes/
